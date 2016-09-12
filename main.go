@@ -6,7 +6,7 @@ import (
 	"os"
 	"runtime"
 
-	//	"github.com/keytalk/client"
+	client "github.com/keytalk/client/client"
 
 	"github.com/BurntSushi/toml"
 	"github.com/op/go-logging"
@@ -30,25 +30,14 @@ func init() {
 func main() {
 	flag.Parse()
 
-	var (
-		md  toml.MetaData
-		err error
-	)
-
-	c := New()
-	if err != nil {
+	var config client.Config
+	if _, err := toml.DecodeFile(configFile, &config); err != nil {
 		panic(err)
 	}
-
-	if md, err = toml.DecodeFile(configFile, &c); err != nil {
-		panic(err)
-	}
-
-	_ = md
 
 	logBackends := []logging.Backend{}
-
-	for _, log := range c.Logging {
+	for _, log := range config.Logging {
+		var err error
 
 		var output io.Writer = os.Stdout
 		switch log.Output {
@@ -78,6 +67,13 @@ func main() {
 	}
 
 	logging.SetBackend(logBackends...)
+
+	var c *client.Client
+	if v, err := client.New(&config); err != nil {
+		panic(err)
+	} else {
+		c = v
+	}
 
 	c.ListenAndServe()
 }

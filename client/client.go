@@ -1,4 +1,4 @@
-package main
+package client
 
 import (
 	"bytes"
@@ -28,6 +28,7 @@ import (
 
 	"github.com/fatih/color"
 	"github.com/gorilla/mux"
+	"github.com/op/go-logging"
 
 	glob "github.com/ryanuber/go-glob"
 
@@ -39,10 +40,9 @@ import (
 	"github.com/elazarl/goproxy"
 )
 
-// var log = logging.MustGetLogger("keytalk/client")
+var log = logging.MustGetLogger("keytalk/client")
 
-type Client struct {
-	listener          net.Listener
+type Config struct {
 	TLSListenerString string `toml:"tlslisten"`
 
 	CACertificateFile     string `toml:"ca_cert"`
@@ -54,15 +54,61 @@ type Client struct {
 		Output string `toml:"output"`
 		Level  string `toml:"level"`
 	} `toml:"logging"`
+}
+
+type Client struct {
+	listener net.Listener
 
 	template *template.Template
 	rccds    []*rccd.RCCD
+
+	config *Config
+
+	tlsconfig *tls.Config
+	ca        *tls.Certificate
 }
 
-func New() *Client {
-	return &Client{
-		rccds: []*rccd.RCCD{},
+func New(config *Config) (*Client, error) {
+	client := Client{
+		rccds:  []*rccd.RCCD{},
+		config: config,
 	}
+
+	if t, err := template.New("index.html").ParseFiles("./static/index.html"); err != nil {
+		return nil, err
+	} else {
+		client.template = t
+	}
+
+	keytalkPath := ".keytalk"
+	if usr, err := user.Current(); err != nil {
+		return nil, err
+	} else {
+		keytalkPath = path.Join(usr.HomeDir, keytalkPath)
+		if _, err := os.Stat(keytalkPath); err == nil {
+		} else if !os.IsNotExist(err) {
+			return nil, err
+		} else if err = os.Mkdir(keytalkPath, 0700); err != nil {
+			return nil, err
+		}
+	}
+
+	// todo(nl5887): first generate personal ca if not exists in cache folder
+	if ca, err := client.GenerateNewCA(); err != nil {
+		return nil, err
+	} else {
+		client.ca = &ca
+	}
+
+	// save all rccd's in ~/.keytalk/rccds/
+	// todo(nl5887): save generated certificates to cache folder
+	// todo(nl5887): arguments for starting, -c for config
+
+	if err := filepath.Walk(keytalkPath, client.visit); err != nil {
+		return nil, err
+	}
+
+	return &client, nil
 }
 
 type pipeResponseWriter struct {
@@ -413,18 +459,17 @@ var defaultTLSConfig = &tls.Config{
 	InsecureSkipVerify: true,
 }
 
-func TLSConfigFromCA(ca *tls.Certificate) func(host string, ctx *goproxy.ProxyCtx) (*tls.Config, error) {
-	return func(host string, ctx *goproxy.ProxyCtx) (*tls.Config, error) {
-		config := defaultTLSConfig
-		ctx.Logf("signing for %s", stripPort(host))
-		cert, err := signHost(*ca, []string{stripPort(host)})
-		if err != nil {
-			ctx.Warnf("Cannot sign host certificate with provided CA: %s", err)
-			return nil, err
-		}
-		config.Certificates = append(config.Certificates, cert)
-		return config, nil
+func (client *Client) TLSConfigFromCA(host string, ctx *goproxy.ProxyCtx) (*tls.Config, error) {
+	config := defaultTLSConfig
+	ctx.Logf("signing for %s", stripPort(host))
+
+	cert, err := signHost(*client.ca, []string{stripPort(host)})
+	if err != nil {
+		ctx.Warnf("Cannot sign host certificate with provided CA: %s", err)
+		return nil, err
 	}
+	config.Certificates = append(config.Certificates, cert)
+	return config, nil
 }
 
 func (client *Client) visit(path string, f os.FileInfo, err error) error {
@@ -445,38 +490,6 @@ func (client *Client) visit(path string, f os.FileInfo, err error) error {
 
 func (client *Client) ListenAndServe() {
 	log.Info("Starting client....")
-
-	if t, err := template.New("index.html").ParseFiles("./static/index.html"); err != nil {
-		panic(err)
-	} else {
-		client.template = t
-	}
-
-	keytalkPath := ".keytalk"
-	if usr, err := user.Current(); err != nil {
-		panic(err)
-	} else {
-		keytalkPath = path.Join(usr.HomeDir, keytalkPath)
-		if _, err := os.Stat(keytalkPath); err == nil {
-		} else if !os.IsNotExist(err) {
-		} else if err = os.Mkdir(keytalkPath, 0700); err != nil {
-			panic(err)
-		}
-	}
-
-	// todo(nl5887): first generate personal ca if not exists in cache folder
-	ca, err := client.GenerateNewCA()
-	if err != nil {
-		panic(err)
-	}
-
-	// save all rccd's in ~/.keytalk/rccds/
-	// todo(nl5887): save generated certificates to cache folder
-	// todo(nl5887): arguments for starting, -c for config
-
-	if err := filepath.Walk(keytalkPath, client.visit); err != nil {
-		panic(err)
-	}
 
 	proxy := goproxy.NewProxyHttpServer()
 
@@ -512,7 +525,7 @@ func (client *Client) ListenAndServe() {
 
 							return &goproxy.ConnectAction{
 								Action:    goproxy.ConnectMitm,
-								TLSConfig: TLSConfigFromCA(&ca),
+								TLSConfig: client.TLSConfigFromCA,
 							}, host
 						}
 					}
