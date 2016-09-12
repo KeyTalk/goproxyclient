@@ -1,0 +1,107 @@
+{
+	"comment": "",
+	"ignore": "test",
+	"package": [
+		{
+			"path": "Users/remco/Projects/keytalk/keytalk-sdk/libkeytalk",
+			"revision": ""
+		},
+		{
+			"checksumSHA1": "hqDDDpue/5363luidNMBS8z8eJU=",
+			"path": "github.com/BurntSushi/toml",
+			"revision": "99064174e013895bbd9b025c31100bd1d9b590ca",
+			"revisionTime": "2016-07-17T15:07:09Z"
+		},
+		{
+			"checksumSHA1": "gImSuab7veEI1PEGvFDcW64HsXg=",
+			"path": "github.com/elazarl/goproxy",
+			"revision": "de25c6ed252fdc01e23dae49d6a86742bd790b12",
+			"revisionTime": "2016-08-28T20:16:06Z"
+		},
+		{
+			"checksumSHA1": "gkRIq2AsG0e/ngNfqW+IF/zr9o8=",
+			"path": "github.com/fatih/color",
+			"revision": "87d4004f2ab62d0d255e0a38f1680aa534549fe3",
+			"revisionTime": "2016-06-10T11:06:02Z"
+		},
+		{
+			"checksumSHA1": "g/V4qrXjUGG9B+e3hB+4NAYJ5Gs=",
+			"path": "github.com/gorilla/context",
+			"revision": "08b5f424b9271eedf6f9f0ce86cb9396ed337a42",
+			"revisionTime": "2016-08-17T18:46:32Z"
+		},
+		{
+			"checksumSHA1": "oDsOWp1nBMGpQ9gCFnczGADwZTE=",
+			"path": "github.com/gorilla/mux",
+			"revision": "0a192a193177452756c362c20087ddafcf6829c4",
+			"revisionTime": "2016-09-02T15:33:43Z"
+		},
+		{
+			"checksumSHA1": "eOXF2PEvYLMeD8DSzLZJWbjYzco=",
+			"path": "github.com/kr/pretty",
+			"revision": "cfb55aafdaf3ec08f0db22699ab822c50091b1c4",
+			"revisionTime": "2016-08-23T17:07:15Z"
+		},
+		{
+			"checksumSHA1": "uulQHQ7IsRKqDudBC8Go9J0gtAc=",
+			"path": "github.com/kr/text",
+			"revision": "7cafcd837844e784b526369c9bce262804aebc60",
+			"revisionTime": "2016-05-04T02:26:26Z"
+		},
+		{
+			"checksumSHA1": "ZAlzPBSsaGe/k5pbISRQvSiVhfc=",
+			"path": "github.com/mattn/go-colorable",
+			"revision": "ed8eb9e318d7a84ce5915b495b7d35e0cfe7b5a8",
+			"revisionTime": "2016-07-31T23:54:17Z"
+		},
+		{
+			"checksumSHA1": "xZuhljnmBysJPta/lMyYmJdujCg=",
+			"path": "github.com/mattn/go-isatty",
+			"revision": "66b8e73f3f5cda9f96b69efd03dd3d7fc4a5cdb8",
+			"revisionTime": "2016-08-06T12:27:52Z"
+		},
+		{
+			"checksumSHA1": "BoXdUBWB8UnSlFlbnuTQaPqfCGk=",
+			"path": "github.com/op/go-logging",
+			"revision": "970db520ece77730c7e4724c61121037378659d9",
+			"revisionTime": "2016-03-15T20:05:05Z"
+		},
+		{
+			"checksumSHA1": "AeisyqxW19Xp9IN+CCAQKNzZSpY=",
+			"path": "github.com/spacemonkeygo/openssl",
+			"revision": "a0b9b65330879b8c85bc7be7ab1608eafe318b5e",
+			"revisionTime": "2016-06-17T01:32:44Z"
+		},
+		{
+			"checksumSHA1": "bSL99i42P6OVH88I94u3+hCoUPc=",
+			"path": "github.com/spacemonkeygo/openssl/utils",
+			"revision": "a0b9b65330879b8c85bc7be7ab1608eafe318b5e",
+			"revisionTime": "2016-06-17T01:32:44Z"
+		},
+		{
+			"checksumSHA1": "EYpvjKhwcVO/Iio1TKk9KxFvoAM=",
+			"path": "github.com/spacemonkeygo/spacelog",
+			"revision": "f936fb050dc6b5fe4a96b485a6f069e8bdc59aeb",
+			"revisionTime": "2016-06-06T22:25:22Z"
+		},
+		{
+			"checksumSHA1": "KeaQhXgb4KlZWJM7aIgcJwCKNOg=",
+			"path": "golang.org/x/crypto/pkcs12",
+			"revision": "0e31b188fd38db611d4fbab7de9373a95f36aae5",
+			"revisionTime": "2016-09-09T01:05:11Z"
+		},
+		{
+			"checksumSHA1": "iVJcif9M9uefvvqHCNR9VQrjc/s=",
+			"path": "golang.org/x/crypto/pkcs12/internal/rc2",
+			"revision": "0e31b188fd38db611d4fbab7de9373a95f36aae5",
+			"revisionTime": "2016-09-09T01:05:11Z"
+		},
+		{
+			"checksumSHA1": "8fD/im5Kwvy3JgmxulDTambmE8w=",
+			"path": "golang.org/x/sys/unix",
+			"revision": "30de6d19a3bd89a5f38ae4028e23aaa5582648af",
+			"revisionTime": "2016-09-07T05:59:14Z"
+		}
+	],
+	"rootPath": "github.com/keytalk/client"
+}

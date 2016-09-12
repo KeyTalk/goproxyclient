@@ -1,0 +1,47 @@
+<html>
+<head>
+
+<link href="//netdna.bootstrapcdn.com/twitter-bootstrap/2.3.2/css/bootstrap-combined.min.css" rel="stylesheet">
+</head>
+<body>
+
+<div tabindex="-1" class="modal show" id="myModal" aria-hidden="true">
+    <img style='float:right; padding: 5px;' src="http://cdn2.hubspot.net/hub/383558/hubfs/KeyTalk_Site_/Keytalk-logo.png?t=1450814751442&width=68" />
+
+    <div class="modal-header">
+            <h1 class="text-center" id="myModalLabel">KeyTalk Login</h1>
+
+    </div>
+        <form method="post" action="/" >
+    <div class="modal-body">
+        {{ if .invalid }} 
+        invalid password
+        {{ end }}
+            <div class="control-group">
+                <!-- HTML5 shim and Respond.js IE8 support of HTML5 elements and media
+                queries -->
+                <!--[if lt IE 10]>
+                    <label class="control-label" for="inputEmail">User Name</label>
+                <![endif]-->
+                <div class="controls">
+                    <input class="input-block-level" id="inputEmail" type="text" placeholder="User name" name="username" value="testuser{{.username}}">
+                </div>
+            </div>
+            <div class="control-group">
+                <!-- HTML5 shim and Respond.js IE8 support of HTML5 elements and media
+                queries -->
+                <!--[if lt IE 10]>
+                    <label class="control-label" for="password">Password</label>
+                <![endif]-->
+                <div class="controls">
+                    <input class="input-block-level" id="password" type="password" placeholder="Password" name="password" value="change!{{.password}}">
+                </div>
+            </div>
+    </div>
+    <div class="modal-footer">
+        <button class="btn btnExtra btn-large btn-primary" type="submit">Login</button>
+    </div>
+        </form>
+</div>
+</body>
+</html>
