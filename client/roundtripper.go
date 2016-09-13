@@ -9,6 +9,7 @@ import (
 	"net/http"
 
 	"github.com/elazarl/goproxy"
+	"github.com/fatih/color"
 	"github.com/gorilla/mux"
 	keytalk "github.com/keytalk/libkeytalk/client"
 	"github.com/keytalk/libkeytalk/rccd"
@@ -62,9 +63,10 @@ func (rt *RoundTripper) RoundTrip(req *http.Request, ctx *goproxy.ProxyCtx) (*ht
 					if uc, err := kc.Authenticate(username, password, rt.service.Name); err != nil {
 						log.Error("Error authenticating with Keytalk: %s", err.Error())
 						message = fmt.Sprintf("Error authenticating with Keytalk: %s", err.Error())
+						fmt.Println(color.RedString(fmt.Sprintf("[+] Error retrieving certificate from %s: %s.", rt.provider.Server, err.Error())))
 						break
 					} else {
-						fmt.Printf("Got user certificate: %#v\n", uc)
+						fmt.Println(color.YellowString(fmt.Sprintf("[+] Short lived certificate received from %s, valid till %s.", rt.provider.Server, uc.NotAfter)))
 
 						// got certificate, store certificate
 						cert2 := &pem.Block{Type: "CERTIFICATE", Bytes: uc.Raw}
@@ -88,6 +90,8 @@ func (rt *RoundTripper) RoundTrip(req *http.Request, ctx *goproxy.ProxyCtx) (*ht
 						rt.client.credentials[rt.provider.Name] = &Credential{
 							PrivateKey:  pk99,
 							Certificate: cert99,
+							NotBefore:   uc.NotBefore,
+							NotAfter:    uc.NotAfter,
 						}
 
 						w.Header().Set("Connection", "close")

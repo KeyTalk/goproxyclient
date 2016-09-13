@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/url"
 	"path"
+	"strings"
 	"time"
 
 	"github.com/elazarl/goproxy"
@@ -34,6 +35,39 @@ func (rt *RoundTripper2) RoundTrip(req *http.Request, ctx *goproxy.ProxyCtx) (*h
 				return nil, fmt.Errorf("Error creating openssl ctx: %s", err.Error())
 			}
 
+			ctx.SetCipherList(strings.Join([]string{
+				"ECDHE-ECDSA-AES128-GCM-SHA256",
+				"ECDHE-RSA-AES128-GCM-SHA256",
+				"ECDHE-ECDSA-AES256-GCM-SHA384",
+				"ECDHE-RSA-AES256-GCM-SHA384",
+				"DHE-RSA-AES128-GCM-SHA256",
+				"DHE-DSS-AES128-GCM-SHA256",
+				"DHE-RSA-AES256-GCM-SHA384",
+				"DHE-DSS-AES256-GCM-SHA384",
+				"ECDHE-ECDSA-AES128-SHA256",
+				"ECDHE-RSA-AES128-SHA256",
+				"ECDHE-ECDSA-AES128-SHA",
+				"ECDHE-RSA-AES128-SHA",
+				"ECDHE-ECDSA-AES256-SHA384",
+				"ECDHE-RSA-AES256-SHA384",
+				"ECDHE-ECDSA-AES256-SHA",
+				"ECDHE-RSA-AES256-SHA",
+				"DHE-RSA-AES128-SHA256",
+				"DHE-RSA-AES256-SHA256",
+				"DHE-RSA-AES128-SHA",
+				"DHE-RSA-AES256-SHA",
+				"DHE-DSS-AES128-SHA256",
+				"DHE-DSS-AES256-SHA256",
+				"DHE-DSS-AES128-SHA",
+				"DHE-DSS-AES256-SHA",
+				"AES128-GCM-SHA256",
+				"AES256-GCM-SHA384",
+				"AES128-SHA256",
+				"AES256-SHA256",
+				"AES128-SHA",
+				"AES256-SHA",
+			}, ":"))
+
 			ctx.UseCertificate(rt.credential.Certificate)
 			ctx.UsePrivateKey(rt.credential.PrivateKey)
 
@@ -41,12 +75,11 @@ func (rt *RoundTripper2) RoundTrip(req *http.Request, ctx *goproxy.ProxyCtx) (*h
 
 			ctx.SetSessionId([]byte{1})
 
-			if err := ctx.LoadVerifyLocations("", path.Join(rt.client.keytalkPath, "certs")); err != nil {
+			if err := ctx.LoadVerifyLocations(path.Join(rt.client.keytalkPath, "ca-bundle.pem"), ""); err != nil {
 				return nil, fmt.Errorf("Error loading verify locations: %s", err.Error())
 			}
 
-			// todo(nl5887): fix
-			ctx.SetVerifyMode(openssl.VerifyNone)
+			ctx.SetVerifyMode(openssl.VerifyPeer)
 
 			conn, err := openssl.Dial(network, addr, ctx, openssl.InsecureSkipHostVerification)
 			if err != nil {
@@ -64,8 +97,6 @@ func (rt *RoundTripper2) RoundTrip(req *http.Request, ctx *goproxy.ProxyCtx) (*h
 			if err != nil {
 				return nil, fmt.Errorf("Error handshake host: %s", err.Error())
 			}
-
-			fmt.Println(conn.VerifyResult())
 
 			return conn, err
 		},

@@ -85,13 +85,7 @@ func New(config *Config) (*Client, error) {
 			return nil, err
 		}
 
-		certsPath := path.Join(keytalkPath, "certs")
-		if _, err := os.Stat(certsPath); err == nil {
-		} else if !os.IsNotExist(err) {
-			return nil, err
-		} else if err = os.Mkdir(certsPath, 0700); err != nil {
-			return nil, err
-		}
+		// download ca-bundle? or in rccd?
 
 		client.keytalkPath = keytalkPath
 	}
@@ -258,15 +252,14 @@ func (client *Client) loadRCCDs(path string) error {
 }
 
 func (client *Client) ListenAndServe() {
-	log.Info("Starting client....")
+	fmt.Println(color.YellowString(fmt.Sprintf("[+] Keytalk client started.")))
+
+	defer fmt.Println(color.YellowString(fmt.Sprintf("[+] Keytalk client stopped.")))
 
 	proxy := goproxy.NewProxyHttpServer()
 
 	proxy.OnRequest().
 		HandleConnect(goproxy.FuncHttpsHandler(func(host string, ctx *goproxy.ProxyCtx) (*goproxy.ConnectAction, string) {
-			// all services in rccd.Provider / Services
-			fmt.Println(host)
-
 			if h, _, err := net.SplitHostPort(host); err != nil {
 				return goproxy.OkConnect, host
 			} else {
@@ -279,17 +272,27 @@ func (client *Client) ListenAndServe() {
 								continue
 							}
 
-							if credential, ok := client.credentials[provider.Name]; ok {
-								ctx.RoundTripper = &RoundTripper2{
-									client:     client,
-									credential: credential,
-								}
-							} else {
+							fmt.Println(color.YellowString(fmt.Sprintf("[+] Found service %s for uri %s.", service.Name, service.Uri)))
+
+							// todo check validity
+							if credential, ok := client.credentials[provider.Name]; !ok {
 								ctx.RoundTripper = &RoundTripper{
 									rccd:     rccd,
 									provider: &provider,
 									service:  &service,
 									client:   client,
+								}
+							} else if err := credential.Valid(); err != nil {
+								ctx.RoundTripper = &RoundTripper{
+									rccd:     rccd,
+									provider: &provider,
+									service:  &service,
+									client:   client,
+								}
+							} else {
+								ctx.RoundTripper = &RoundTripper2{
+									client:     client,
+									credential: credential,
 								}
 							}
 
@@ -307,10 +310,7 @@ func (client *Client) ListenAndServe() {
 
 	proxy.Verbose = false
 
-	// add hijack support to LogHandler
-	lh := proxy // handlers.LogHandler(proxy, handlers.NewLogOptions(log.Info, "_default_"))
-
-	if err := http.ListenAndServe(client.config.ListenerString, lh); err != nil {
+	if err := http.ListenAndServe(client.config.ListenerString, proxy); err != nil {
 		panic(err)
 	}
 }
