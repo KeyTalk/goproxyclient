@@ -77,6 +77,22 @@ func New(config *Config) (*Client, error) {
 			return nil, err
 		}
 
+		cachePath := path.Join(keytalkPath, "cache")
+		if _, err := os.Stat(cachePath); err == nil {
+		} else if !os.IsNotExist(err) {
+			return nil, err
+		} else if err = os.Mkdir(cachePath, 0700); err != nil {
+			return nil, err
+		}
+
+		certsPath := path.Join(keytalkPath, "certs")
+		if _, err := os.Stat(certsPath); err == nil {
+		} else if !os.IsNotExist(err) {
+			return nil, err
+		} else if err = os.Mkdir(certsPath, 0700); err != nil {
+			return nil, err
+		}
+
 		client.keytalkPath = keytalkPath
 	}
 
@@ -91,6 +107,15 @@ func New(config *Config) (*Client, error) {
 
 	if err := client.loadRCCDs(client.keytalkPath); err != nil {
 		return nil, err
+	}
+
+	for _, rccd := range client.rccds {
+		cert := &pem.Block{Type: "CERTIFICATE", Bytes: rccd.UCA.Raw}
+		ioutil.WriteFile(path.Join(client.keytalkPath, "certs", fmt.Sprintf("uca.pem")), pem.EncodeToMemory(cert), 0600)
+		cert = &pem.Block{Type: "CERTIFICATE", Bytes: rccd.SCA.Raw}
+		ioutil.WriteFile(path.Join(client.keytalkPath, "certs", fmt.Sprintf("sca.pem")), pem.EncodeToMemory(cert), 0600)
+		cert = &pem.Block{Type: "CERTIFICATE", Bytes: rccd.PCA.Raw}
+		ioutil.WriteFile(path.Join(client.keytalkPath, "certs", fmt.Sprintf("pca.pem")), pem.EncodeToMemory(cert), 0600)
 	}
 
 	return &client, nil

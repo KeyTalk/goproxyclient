@@ -52,7 +52,6 @@ func (rt *RoundTripper) RoundTrip(req *http.Request, ctx *goproxy.ProxyCtx) (*ht
 				for {
 					kc, err := keytalk.New(rt.rccd, fmt.Sprintf("https://%s", rt.provider.Server))
 					if err != nil {
-						// todo(nl5887): return body with error
 						message = fmt.Sprintf("Error authenticating with Keytalk: %s", err.Error())
 						break
 					}
@@ -61,7 +60,6 @@ func (rt *RoundTripper) RoundTrip(req *http.Request, ctx *goproxy.ProxyCtx) (*ht
 					password = r.PostFormValue("password")
 
 					if uc, err := kc.Authenticate(username, password, rt.service.Name); err != nil {
-						// todo(nl5887): return body with error
 						log.Error("Error authenticating with Keytalk: %s", err.Error())
 						message = fmt.Sprintf("Error authenticating with Keytalk: %s", err.Error())
 						break
@@ -115,9 +113,9 @@ func (rt *RoundTripper) RoundTrip(req *http.Request, ctx *goproxy.ProxyCtx) (*ht
 			}
 		})
 
-		// router.PathPrefix("/").Handler(http.FileServer(http.Dir("./static/")))
 		router.ServeHTTP(prw, req)
 	}()
+
 	<-ready
 
 	return resp, nil
