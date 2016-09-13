@@ -1,7 +1,6 @@
 package client
 
 import (
-	"bytes"
 	"crypto/rand"
 	"crypto/rsa"
 	"crypto/sha1"
@@ -9,10 +8,9 @@ import (
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"encoding/pem"
-	"flag"
 	"fmt"
 	"html/template"
-	"io"
+	"io/ioutil"
 	"math/big"
 	"net"
 	"net/http"
@@ -27,34 +25,16 @@ import (
 	"time"
 
 	"github.com/fatih/color"
-	"github.com/gorilla/mux"
 	"github.com/op/go-logging"
 
 	glob "github.com/ryanuber/go-glob"
 
-	"github.com/spacemonkeygo/openssl"
-
-	keytalk "github.com/keytalk/libkeytalk/client"
 	rccd "github.com/keytalk/libkeytalk/rccd"
 
 	"github.com/elazarl/goproxy"
 )
 
 var log = logging.MustGetLogger("keytalk/client")
-
-type Config struct {
-	TLSListenerString string `toml:"tlslisten"`
-
-	CACertificateFile     string `toml:"ca_cert"`
-	ServerCertificateFile string `toml:"server_cert"`
-	ServerKeyFile         string `toml:"server_key"`
-	AuthType              string `toml:"authenticationtype"`
-
-	Logging []struct {
-		Output string `toml:"output"`
-		Level  string `toml:"level"`
-	} `toml:"logging"`
-}
 
 type Client struct {
 	listener net.Listener
@@ -66,12 +46,18 @@ type Client struct {
 
 	tlsconfig *tls.Config
 	ca        *tls.Certificate
+
+	credentials map[string]*Credential
+
+	keytalkPath string
 }
 
 func New(config *Config) (*Client, error) {
 	client := Client{
 		rccds:  []*rccd.RCCD{},
 		config: config,
+
+		credentials: map[string]*Credential{},
 	}
 
 	if t, err := template.New("index.html").ParseFiles("./static/index.html"); err != nil {
@@ -80,296 +66,34 @@ func New(config *Config) (*Client, error) {
 		client.template = t
 	}
 
-	keytalkPath := ".keytalk"
 	if usr, err := user.Current(); err != nil {
 		return nil, err
 	} else {
-		keytalkPath = path.Join(usr.HomeDir, keytalkPath)
+		keytalkPath := path.Join(usr.HomeDir, ".keytalk")
 		if _, err := os.Stat(keytalkPath); err == nil {
 		} else if !os.IsNotExist(err) {
 			return nil, err
 		} else if err = os.Mkdir(keytalkPath, 0700); err != nil {
 			return nil, err
 		}
+
+		client.keytalkPath = keytalkPath
 	}
 
-	// todo(nl5887): first generate personal ca if not exists in cache folder
-	if ca, err := client.GenerateNewCA(); err != nil {
-		return nil, err
-	} else {
+	capath := path.Join(client.keytalkPath, "ca.pem")
+	if ca, err := LoadCA(capath); err == nil {
 		client.ca = &ca
+	} else if ca, err := GenerateNewCA(capath); err == nil {
+		client.ca = &ca
+	} else {
+		return nil, err
 	}
 
-	// save all rccd's in ~/.keytalk/rccds/
-	// todo(nl5887): save generated certificates to cache folder
-	// todo(nl5887): arguments for starting, -c for config
-
-	if err := filepath.Walk(keytalkPath, client.visit); err != nil {
+	if err := client.loadRCCDs(client.keytalkPath); err != nil {
 		return nil, err
 	}
 
 	return &client, nil
-}
-
-type pipeResponseWriter struct {
-	r     *io.PipeReader
-	w     *io.PipeWriter
-	resp  *http.Response
-	ready chan<- struct{}
-}
-
-func (w *pipeResponseWriter) Header() http.Header {
-	return w.resp.Header
-}
-
-func (w *pipeResponseWriter) Write(p []byte) (int, error) {
-	if w.ready != nil {
-		w.WriteHeader(http.StatusOK)
-	}
-	return w.w.Write(p)
-}
-
-func (w *pipeResponseWriter) WriteHeader(status int) {
-	if w.ready == nil {
-		// already called
-		return
-	}
-	w.resp.StatusCode = status
-	w.resp.Status = fmt.Sprintf("%d %s", status, http.StatusText(status))
-	close(w.ready)
-	w.ready = nil
-}
-
-type RoundTripper2 struct {
-	client *Client
-}
-
-// todo(nl5887): make context specific, this is specific to the provider
-// we're logging in per provider, not per service
-var (
-	loggedIn = false
-	cert99   *openssl.Certificate
-	pk99     openssl.PrivateKey
-)
-
-func (rt *RoundTripper2) RoundTrip(req *http.Request, ctx *goproxy.ProxyCtx) (*http.Response, error) {
-	transport := &http.Transport{
-		Proxy: http.ProxyFromEnvironment,
-		Dial: (&net.Dialer{
-			Timeout:   30 * time.Second,
-			KeepAlive: 30 * time.Second,
-		}).Dial,
-		DialTLS: func(network, addr string) (net.Conn, error) {
-			ctx, err := openssl.NewCtx()
-			if err != nil {
-				log.Error("Error creating openssl ctx: %s", err.Error())
-				return nil, err
-			}
-
-			ctx.UseCertificate(cert99)
-			ctx.UsePrivateKey(pk99)
-
-			ctx.SetSessionCacheMode(openssl.SessionCacheClient)
-
-			ctx.SetSessionId([]byte{1})
-
-			ctx.SetVerifyMode(openssl.VerifyNone)
-
-			conn, err := openssl.Dial(network, addr, ctx, openssl.InsecureSkipHostVerification)
-			if err != nil {
-				log.Error("Error dialing: %s", err.Error())
-				return nil, err
-			}
-
-			host, _, err := net.SplitHostPort(addr)
-			if err = conn.SetTlsExtHostName(host); err != nil {
-				log.Error("Error set tls ext host: %s", err.Error())
-				return nil, err
-			}
-
-			conn.SetDeadline(time.Now().Add(time.Minute * 10))
-
-			err = conn.Handshake()
-			if err != nil {
-				log.Error("Error handshake: %s", err.Error())
-				return nil, err
-			}
-			return conn, err
-		},
-		TLSHandshakeTimeout: 10 * time.Second,
-	}
-
-	return transport.RoundTrip(req)
-}
-
-type RoundTripper struct {
-	client   *Client
-	rccd     *rccd.RCCD
-	provider *rccd.Provider
-	service  *rccd.Service
-}
-
-func (rt *RoundTripper) RoundTrip(req *http.Request, ctx *goproxy.ProxyCtx) (*http.Response, error) {
-	r, w := io.Pipe()
-
-	resp := &http.Response{
-		Proto:      "HTTP/1.1",
-		ProtoMajor: 1,
-		ProtoMinor: 1,
-		Header:     make(http.Header),
-		Body:       r,
-		Request:    req,
-	}
-
-	ready := make(chan struct{})
-	prw := &pipeResponseWriter{r, w, resp, ready}
-	go func() {
-		defer w.Close()
-
-		var router = mux.NewRouter()
-		router.PathPrefix("/").HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			var (
-				username string
-				password string
-			)
-
-			message := ""
-
-			if r.Method == "POST" {
-				for {
-					kc, err := keytalk.New(rt.rccd, fmt.Sprintf("https://%s", rt.provider.Server))
-					if err != nil {
-						// todo(nl5887): return body with error
-						message = fmt.Sprintf("Error authenticating with Keytalk: %s", err.Error())
-						break
-					}
-
-					username = r.PostFormValue("username")
-					password = r.PostFormValue("password")
-
-					if uc, err := kc.Authenticate(username, password, rt.service.Name); err != nil {
-						// todo(nl5887): return body with error
-						log.Error("Error authenticating with Keytalk: %s", err.Error())
-						message = fmt.Sprintf("Error authenticating with Keytalk: %s", err.Error())
-						break
-					} else {
-						fmt.Printf("Got user certificate: %#v\n", uc)
-						// got certificate, store certificate
-						cert2 := &pem.Block{Type: "CERTIFICATE", Bytes: uc.Raw}
-						certstr := pem.EncodeToMemory(cert2)
-
-						cert99, err = openssl.LoadCertificateFromPEM(certstr)
-						if err != nil {
-							log.Error("Error creating openssl ctx: %s", err.Error())
-							panic(err)
-						}
-
-						key := &pem.Block{Type: "RSA PRIVATE KEY", Bytes: x509.MarshalPKCS1PrivateKey(uc.PrivateKey().(*rsa.PrivateKey))}
-						keystr := pem.EncodeToMemory(key)
-
-						pk99, err = openssl.LoadPrivateKeyFromPEM(keystr)
-						if err != nil {
-							log.Error("Error creating openssl ctx: %s", err.Error())
-							panic(err)
-						}
-
-						loggedIn = true
-						w.Header().Set("Connection", "close")
-
-						w.Header().Set("Location", r.URL.String())
-						w.WriteHeader(http.StatusFound)
-						return
-					}
-
-					break
-				}
-			}
-
-			if err := rt.client.template.Execute(w, map[string]interface{}{
-				"username": username,
-				"password": password,
-				"message":  message,
-				"service":  rt.service,
-				"provider": rt.provider,
-			}); err != nil {
-				log.Error("Error executing template: %s", err.Error())
-				panic(err)
-			}
-		})
-
-		// router.PathPrefix("/").Handler(http.FileServer(http.Dir("./static/")))
-		router.ServeHTTP(prw, req)
-	}()
-	<-ready
-
-	return resp, nil
-}
-
-func (c *Client) GenerateNewCA() (tls.Certificate, error) {
-	var priv *rsa.PrivateKey
-	if pk, err := rsa.GenerateKey(rand.Reader, 2048); err != nil {
-		return tls.Certificate{}, err
-	} else {
-		priv = pk
-	}
-
-	notBefore := time.Now()
-
-	notAfter := notBefore.Add(time.Hour * 24 * 365 * 2)
-
-	template := x509.Certificate{
-		Subject: pkix.Name{
-			Organization: []string{"Keytalk Client CA"},
-		},
-
-		NotBefore: notBefore,
-		NotAfter:  notAfter,
-
-		KeyUsage:              x509.KeyUsageKeyEncipherment | x509.KeyUsageDigitalSignature | x509.KeyUsageCertSign,
-		IsCA:                  true,
-		ExtKeyUsage:           []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
-		BasicConstraintsValid: true,
-	}
-
-	serialNumberLimit := new(big.Int).Lsh(big.NewInt(1), 128)
-	if serialNumber, err := rand.Int(rand.Reader, serialNumberLimit); err != nil {
-		return tls.Certificate{}, err
-	} else {
-		template.SerialNumber = serialNumber
-	}
-
-	derBytes, err := x509.CreateCertificate(rand.Reader, &template, &template, &priv.PublicKey, priv)
-	if err != nil {
-		return tls.Certificate{}, err
-	}
-
-	var cert bytes.Buffer
-	pem.Encode(&cert, &pem.Block{Type: "CERTIFICATE", Bytes: derBytes})
-
-	var pk bytes.Buffer
-	pem.Encode(&pk, &pem.Block{Type: "RSA PRIVATE KEY", Bytes: x509.MarshalPKCS1PrivateKey(priv)})
-
-	// save config
-	return tls.X509KeyPair(cert.Bytes(), pk.Bytes())
-
-	/*
-		certOut, err := os.Create("cert.pem")
-		if err != nil {
-			log.Fatalf("failed to open cert.pem for writing: %s", err)
-		}
-		pem.Encode(certOut, &pem.Block{Type: "CERTIFICATE", Bytes: derBytes})
-		certOut.Close()
-		log.Print("written cert.pem\n")
-
-		keyOut, err := os.OpenFile("key.pem", os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0600)
-		if err != nil {
-			log.Print("failed to open key.pem for writing:", err)
-			return
-		}
-		pem.Encode(keyOut, pemBlockForKey(priv))
-		keyOut.Close()
-		log.Print("written key.pem\n")
-	*/
 }
 
 func hashSorted(lst []string) []byte {
@@ -432,7 +156,7 @@ func signHost(ca tls.Certificate, hosts []string) (cert tls.Certificate, err err
 	}
 
 	var certpriv *rsa.PrivateKey
-	if certpriv, err = rsa.GenerateKey(rand.Reader, 1024); err != nil {
+	if certpriv, err = rsa.GenerateKey(rand.Reader, 2048); err != nil {
 		return
 	}
 
@@ -463,29 +187,49 @@ func (client *Client) TLSConfigFromCA(host string, ctx *goproxy.ProxyCtx) (*tls.
 	config := defaultTLSConfig
 	ctx.Logf("signing for %s", stripPort(host))
 
-	cert, err := signHost(*client.ca, []string{stripPort(host)})
-	if err != nil {
-		ctx.Warnf("Cannot sign host certificate with provided CA: %s", err)
+	certPath := path.Join(client.keytalkPath, "cache", stripPort(host)+".pem")
+
+	if data, err := ioutil.ReadFile(certPath); os.IsNotExist(err) {
+		if cert, err := signHost(*client.ca, []string{stripPort(host)}); err != nil {
+			ctx.Warnf("Cannot sign host certificate with provided CA: %s", err)
+			return nil, err
+		} else if f, err := os.OpenFile(certPath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0600); err != nil {
+			return nil, err
+		} else {
+			defer f.Close()
+
+			pem.Encode(f, &pem.Block{Type: "CERTIFICATE", Bytes: cert.Certificate[0]})
+			pem.Encode(f, &pem.Block{Type: "RSA PRIVATE KEY", Bytes: x509.MarshalPKCS1PrivateKey(cert.PrivateKey.(*rsa.PrivateKey))})
+
+			config.Certificates = append(config.Certificates, cert)
+		}
+	} else if err != nil {
 		return nil, err
+	} else if cert, err := tls.X509KeyPair(data, data); err != nil {
+		return nil, err
+	} else {
+		config.Certificates = append(config.Certificates, cert)
 	}
-	config.Certificates = append(config.Certificates, cert)
+
 	return config, nil
 }
 
-func (client *Client) visit(path string, f os.FileInfo, err error) error {
-	if !glob.Glob("*.rccd", strings.ToLower(filepath.Base(path))) {
+func (client *Client) loadRCCDs(path string) error {
+	return filepath.Walk(path, func(path string, f os.FileInfo, err error) error {
+		if !glob.Glob("*.rccd", strings.ToLower(filepath.Base(path))) {
+			return nil
+		}
+
+		fmt.Println(color.YellowString(fmt.Sprintf("[+] Found RCCD %s.", path)))
+
+		if rccd, err := rccd.Open(path); err != nil {
+			return err
+		} else {
+			client.rccds = append(client.rccds, rccd)
+		}
+
 		return nil
-	}
-
-	fmt.Println(color.YellowString(fmt.Sprintf("[+] Found RCCD %s.", path)))
-
-	if rccd, err := rccd.Open(path); err != nil {
-		return err
-	} else {
-		client.rccds = append(client.rccds, rccd)
-	}
-
-	return nil
+	})
 }
 
 func (client *Client) ListenAndServe() {
@@ -510,9 +254,10 @@ func (client *Client) ListenAndServe() {
 								continue
 							}
 
-							if loggedIn /* for this provider */ {
+							if credential, ok := client.credentials[provider.Name]; ok {
 								ctx.RoundTripper = &RoundTripper2{
-									client: client,
+									client:     client,
+									credential: credential,
 								}
 							} else {
 								ctx.RoundTripper = &RoundTripper{
@@ -535,14 +280,12 @@ func (client *Client) ListenAndServe() {
 			return goproxy.OkConnect, host
 		}))
 
-	addr := flag.String("addr", "127.0.0.1:8080", "proxy listen address")
-	flag.Parse()
-	proxy.Verbose = true
+	proxy.Verbose = false
 
 	// add hijack support to LogHandler
 	lh := proxy // handlers.LogHandler(proxy, handlers.NewLogOptions(log.Info, "_default_"))
 
-	if err := http.ListenAndServe(*addr, lh); err != nil {
+	if err := http.ListenAndServe(client.config.ListenerString, lh); err != nil {
 		panic(err)
 	}
 }

@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+<key>KeepAlive</key>
+<true/>
+<key>Label</key>
+<string>keytalk</string>
+<key>ProgramArguments</key>
+<array>
+<string>/Applications/Keytalk/keytalk</string>
+<string>server</string>
+<string>--config=/Applications/Keytalk/keytalk.toml</string>
+<string></string>
+</array>
+<key>RunAtLoad</key>
+<true/>
+<key>WorkingDirectory</key>
+<string>/Applications/Keytalk/</string>
+</dict>
+</plist>
