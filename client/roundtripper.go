@@ -2,17 +2,23 @@ package client
 
 import (
 	"crypto/rsa"
+	"crypto/tls"
 	"crypto/x509"
 	"encoding/pem"
 	"fmt"
 	"io"
+	"io/ioutil"
 	"net/http"
+	"os"
+	"os/exec"
+	"path"
 
 	"github.com/elazarl/goproxy"
 	"github.com/fatih/color"
 	"github.com/gorilla/mux"
 	keytalk "github.com/keytalk/libkeytalk/client"
 	"github.com/keytalk/libkeytalk/rccd"
+	"github.com/mitchellh/go-homedir"
 	"github.com/spacemonkeygo/openssl"
 )
 
@@ -21,6 +27,45 @@ type RoundTripper struct {
 	rccd     *rccd.RCCD
 	provider *rccd.Provider
 	service  *rccd.Service
+}
+
+func replaceInKeystore(uc *keytalk.UserCertificate) error {
+	if home, err := homedir.Dir(); err != nil {
+		return err
+	} else if err == nil {
+		loginKeychain := path.Join(home, "Library", "Keychains", "login.keychain")
+
+		commonName := uc.Subject.CommonName
+
+		cmd := exec.Command("/usr/bin/security", "delete-certificate", "-k", loginKeychain, "-c", commonName)
+		if err := cmd.Run(); err != nil {
+			return err
+		}
+
+		tmpfile, err := ioutil.TempFile("", "keytalk")
+		if err != nil {
+			return err
+		}
+
+		defer os.Remove(tmpfile.Name())
+
+		key := &pem.Block{Type: "RSA PRIVATE KEY", Bytes: x509.MarshalPKCS1PrivateKey(uc.PrivateKey().(*rsa.PrivateKey))}
+
+		if err := pem.Encode(tmpfile, key); err != nil {
+			return err
+		}
+
+		if err := tmpfile.Close(); err != nil {
+			return err
+		}
+
+		cmd = exec.Command("/usr/bin/security", "add-certificates", "-k", loginKeychain, tmpfile.Name())
+		if err := cmd.Run(); err != nil {
+			return err
+		}
+	}
+
+	return nil
 }
 
 func (rt *RoundTripper) RoundTrip(req *http.Request, ctx *goproxy.ProxyCtx) (*http.Response, error) {
@@ -102,6 +147,8 @@ func (rt *RoundTripper) RoundTrip(req *http.Request, ctx *goproxy.ProxyCtx) (*ht
 						}
 
 						w.Header().Set("Connection", "close")
+
+						replaceInKeystore(uc)
 
 						w.Header().Set("Location", r.URL.String())
 						w.WriteHeader(http.StatusFound)
