@@ -41,6 +41,13 @@ func (rt *RoundTripper) RoundTrip(req *http.Request, ctx *goproxy.ProxyCtx) (*ht
 		defer w.Close()
 
 		var router = mux.NewRouter()
+		router.PathPrefix("/logo.png").HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Add("Content-Type", "image/png")
+			w.WriteHeader(200)
+
+			w.Write(rt.rccd.Logo)
+		})
+
 		router.PathPrefix("/").HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			var (
 				username = rt.client.config.Username
