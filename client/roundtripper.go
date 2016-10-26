@@ -99,21 +99,27 @@ func (rt *RoundTripper) RoundTrip(req *http.Request, ctx *goproxy.ProxyCtx) (*ht
 				password = rt.client.config.Password
 			)
 
+			// should we retrieve requirements first?
+
 			message := ""
 
 			if r.Method == "POST" {
 				for {
 					kc, err := keytalk.New(rt.rccd, fmt.Sprintf("https://%s", rt.provider.Server))
 					if err != nil {
-						message = fmt.Sprintf("Error authenticating with Keytalk: %s", err.Error())
+						message = fmt.Sprintf("Error initializing Keytalk client: %s", err.Error())
 						break
 					}
+
+					kc.Client = &http.Client{
+						Transport: &http.Transport{
+							TLSClientConfig: &tls.Config{InsecureSkipVerify: true}, // ignore expired SSL certificates
+						}}
 
 					username = r.PostFormValue("username")
 					password = r.PostFormValue("password")
 
 					if uc, err := kc.Authenticate(username, password, rt.service.Name); err != nil {
-						log.Error("Error authenticating with Keytalk: %s", err.Error())
 						message = fmt.Sprintf("Error authenticating with Keytalk: %s", err.Error())
 						fmt.Println(color.RedString(fmt.Sprintf("[+] Error retrieving certificate from %s: %s.", rt.provider.Server, err.Error())))
 						break
@@ -127,7 +133,7 @@ func (rt *RoundTripper) RoundTrip(req *http.Request, ctx *goproxy.ProxyCtx) (*ht
 						cert99, err := openssl.LoadCertificateFromPEM(certstr)
 						if err != nil {
 							log.Error("Error creating openssl ctx: %s", err.Error())
-							panic(err)
+							return
 						}
 
 						key := &pem.Block{Type: "RSA PRIVATE KEY", Bytes: x509.MarshalPKCS1PrivateKey(uc.PrivateKey().(*rsa.PrivateKey))}
@@ -136,7 +142,7 @@ func (rt *RoundTripper) RoundTrip(req *http.Request, ctx *goproxy.ProxyCtx) (*ht
 						pk99, err := openssl.LoadPrivateKeyFromPEM(keystr)
 						if err != nil {
 							log.Error("Error creating openssl ctx: %s", err.Error())
-							panic(err)
+							return
 						}
 
 						rt.client.credentials[rt.provider.Name] = &Credential{
