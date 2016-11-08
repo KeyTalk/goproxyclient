@@ -23,6 +23,7 @@ type RoundTripper2 struct {
 func (rt *RoundTripper2) RoundTrip(req *http.Request, ctx *goproxy.ProxyCtx) (*http.Response, error) {
 	transport := &http.Transport{
 		Proxy: func(*http.Request) (*url.URL, error) {
+			// we explicitly don't use an proxy
 			return nil, nil
 		},
 		Dial: (&net.Dialer{

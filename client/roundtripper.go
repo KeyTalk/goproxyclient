@@ -1,7 +1,9 @@
 package client
 
 import (
+	"bytes"
 	"crypto/rsa"
+	"crypto/sha1"
 	"crypto/tls"
 	"crypto/x509"
 	"encoding/pem"
@@ -9,6 +11,8 @@ import (
 	"io"
 	"io/ioutil"
 	"net/http"
+	"net/http/cookiejar"
+	"net/url"
 	"os"
 	"os/exec"
 	"path"
@@ -29,17 +33,44 @@ type RoundTripper struct {
 	service  *rccd.Service
 }
 
+func FingerprintString(f []byte) string {
+	var buf bytes.Buffer
+	for _, b := range f {
+		fmt.Fprintf(&buf, "%02x", b)
+	}
+	return buf.String()
+}
+
 func replaceInKeystore(uc *keytalk.UserCertificate) error {
 	if home, err := homedir.Dir(); err != nil {
 		return err
 	} else if err == nil {
 		loginKeychain := path.Join(home, "Library", "Keychains", "login.keychain")
 
-		commonName := uc.Subject.CommonName
+		pool := NewCertPool()
 
-		cmd := exec.Command("/usr/bin/security", "delete-certificate", "-k", loginKeychain, "-c", commonName)
-		if err := cmd.Run(); err != nil {
-			return err
+		cmd := exec.Command("/usr/bin/security", "find-certificate", "-p", "-a", loginKeychain)
+		if output, err := cmd.Output(); err != nil {
+			log.Info("Could not retrieve output", err.Error())
+		} else if ok := pool.AppendCertsFromPEM([]byte(output)); !ok {
+			log.Info("Could not parse find-certificate output", string(output))
+		} else {
+			for _, cert := range pool.Certs() {
+				if cert.Issuer.CommonName != "KeyTalk Signing CA" {
+					continue
+				}
+
+				h := sha1.New()
+				h.Write(cert.Raw)
+
+				fingerprint := FingerprintString(h.Sum(nil))
+
+				cmd = exec.Command("/usr/bin/security", "delete-certificate", "-Z", fingerprint, loginKeychain)
+				if err := cmd.Run(); err != nil {
+					fmt.Println(fingerprint, err.Error())
+				}
+
+			}
 		}
 
 		tmpfile, err := ioutil.TempFile("", "keytalk")
@@ -48,9 +79,14 @@ func replaceInKeystore(uc *keytalk.UserCertificate) error {
 		}
 
 		defer os.Remove(tmpfile.Name())
+		defer os.Remove(fmt.Sprintf("%s.p12", tmpfile.Name()))
+
+		cert2 := &pem.Block{Type: "CERTIFICATE", Bytes: uc.Raw}
+		if err := pem.Encode(tmpfile, cert2); err != nil {
+			return err
+		}
 
 		key := &pem.Block{Type: "RSA PRIVATE KEY", Bytes: x509.MarshalPKCS1PrivateKey(uc.PrivateKey().(*rsa.PrivateKey))}
-
 		if err := pem.Encode(tmpfile, key); err != nil {
 			return err
 		}
@@ -59,7 +95,12 @@ func replaceInKeystore(uc *keytalk.UserCertificate) error {
 			return err
 		}
 
-		cmd = exec.Command("/usr/bin/security", "add-certificates", "-k", loginKeychain, tmpfile.Name())
+		cmd = exec.Command("openssl", "pkcs12", "-export", "-clcerts", "-in", tmpfile.Name(), "-out", fmt.Sprintf("%s.p12", tmpfile.Name()), "-passout", "pass:test")
+		if err := cmd.Run(); err != nil {
+			return err
+		}
+
+		cmd = exec.Command("/usr/bin/security", "import", fmt.Sprintf("%s.p12", tmpfile.Name()), "-k", loginKeychain, "-Ptest")
 		if err := cmd.Run(); err != nil {
 			return err
 		}
@@ -111,10 +152,20 @@ func (rt *RoundTripper) RoundTrip(req *http.Request, ctx *goproxy.ProxyCtx) (*ht
 						break
 					}
 
+					jar, _ := cookiejar.New(nil)
+
 					kc.Client = &http.Client{
 						Transport: &http.Transport{
-							TLSClientConfig: &tls.Config{InsecureSkipVerify: true}, // ignore expired SSL certificates
-						}}
+							TLSClientConfig: &tls.Config{
+								InsecureSkipVerify: true,
+							},
+							Proxy: func(*http.Request) (*url.URL, error) {
+								// we explicitly don't use an proxy
+								return nil, nil
+							},
+						},
+						Jar: jar,
+					}
 
 					username = r.PostFormValue("username")
 					password = r.PostFormValue("password")
@@ -152,10 +203,11 @@ func (rt *RoundTripper) RoundTrip(req *http.Request, ctx *goproxy.ProxyCtx) (*ht
 							NotAfter:    uc.NotAfter,
 						}
 
+						if err := replaceInKeystore(uc); err != nil {
+							log.Error("Could not load certificate in keychain: %s", err.Error())
+						}
+
 						w.Header().Set("Connection", "close")
-
-						replaceInKeystore(uc)
-
 						w.Header().Set("Location", r.URL.String())
 						w.WriteHeader(http.StatusFound)
 						return

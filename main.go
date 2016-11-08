@@ -1,18 +1,25 @@
 package main
 
 import (
+	"bytes"
+	"crypto/x509"
+	"encoding/pem"
 	"flag"
 	"fmt"
+	"html/template"
 	"io"
 	"io/ioutil"
 	"os"
 	"os/exec"
 	"os/signal"
 	"path"
+	"path/filepath"
+	"strings"
 	"syscall"
 
 	"github.com/BurntSushi/toml"
 	"github.com/fatih/color"
+	"github.com/kardianos/osext"
 	"github.com/keytalk/client/client"
 	"github.com/keytalk/rccd"
 	"github.com/minio/cli"
@@ -32,7 +39,7 @@ var globalFlags = []cli.Flag{
 	cli.StringFlag{
 		Name:  "c,config",
 		Usage: "config file",
-		Value: "config.toml",
+		Value: "~/.keytalk/config.toml",
 	},
 	cli.BoolFlag{
 		Name:  "help, h",
@@ -77,9 +84,9 @@ const LaunchAgent = `<?xml version="1.0" encoding="UTF-8"?>
     <string>com.keytalk.client</string>
     <key>ProgramArguments</key>
     <array>
-        <string>/Users/remco/Projects/keytalk/keytalk-client/src/github.com/keytalk/client/bin/keytalk</string>
+        <string>{{ .Path }}</string>
         <string>-c</string>
-        <string>/Users/remco/Projects/keytalk/keytalk-client/src/github.com/keytalk/client/config.toml</string>
+        <string>{{ .Config }}</string>
     </array>
     <key>KeepAlive</key>
     <false/>
@@ -89,7 +96,7 @@ const LaunchAgent = `<?xml version="1.0" encoding="UTF-8"?>
     <key>RunAtLoad</key>
     <true/>
     <key>WorkingDirectory</key>
-    <string>/Users/remco/Projects/keytalk/keytalk-client/src/github.com/keytalk/client/</string>
+    <string>{{ .BasePath }}</string>
     <key>StandardErrorPath</key>
     <string>/usr/local/var/log/keytalk.log</string>
     <key>StandardOutPath</key>
@@ -120,7 +127,28 @@ func Install(c *cli.Context) {
 	} else {
 		destPath := path.Join(home, "Library", "LaunchAgents", "com.keytalk.plist")
 
-		if err := ioutil.WriteFile(destPath, []byte(LaunchAgent), 600); err != nil {
+		t := template.New("")
+
+		if t, err = t.Parse(LaunchAgent); err != nil {
+			fmt.Println(color.RedString(fmt.Sprintf("[+] Could not parse agent template: %s.", err.Error())))
+			return
+		}
+
+		executablePath := ""
+		if v, err := osext.Executable(); err == nil {
+			executablePath = v
+		}
+
+		buf := &bytes.Buffer{}
+		if err = t.Execute(buf, map[string]string{
+			"Path":     executablePath,
+			"BasePath": path.Dir(executablePath),
+			"Config":   configPath(c),
+		}); err != nil {
+			return
+		}
+
+		if err := ioutil.WriteFile(destPath, buf.Bytes(), 0600); err != nil {
 			fmt.Println(color.RedString(fmt.Sprintf("[+] Could write plist file %s: %s.", destPath, err.Error())))
 			return
 		}
@@ -135,6 +163,8 @@ func Install(c *cli.Context) {
 			fmt.Println(color.RedString(fmt.Sprintf("[+] Could load agent %s: %s.", destPath, err.Error())))
 			return
 		}
+
+		fmt.Println(color.YellowString(fmt.Sprintf("[+] Keytalk Client agent successfully installed.")))
 	}
 }
 
@@ -159,24 +189,69 @@ func Load(c *cli.Context) {
 
 	defer f.Close()
 
-	if home, err := homedir.Dir(); err != nil {
+	home := ""
+	if v, err := homedir.Dir(); err != nil {
 		fmt.Println(color.RedString(fmt.Sprintf("[+] Could retrieve homedir: %s.", err.Error())))
 		return
 	} else {
-		destPath := path.Join(home, ".keytalk", path.Base(c.Args()[0]))
-		if f2, err := os.Create(destPath); err != nil {
-			fmt.Println(color.RedString(fmt.Sprintf("[+] Could not create %s: %s.", destPath, err.Error())))
+		home = v
+	}
+
+	destPath := path.Join(home, ".keytalk", path.Base(c.Args()[0]))
+	if f2, err := os.Create(destPath); err != nil {
+		fmt.Println(color.RedString(fmt.Sprintf("[+] Could not create %s: %s.", destPath, err.Error())))
+		return
+	} else {
+		defer f2.Close()
+
+		if _, err := io.Copy(f2, f); err != nil {
+			fmt.Println(color.RedString(fmt.Sprintf("[+] Could not copy %s to %s: %s.", sourcePath, destPath, err.Error())))
 			return
 		} else {
-			defer f2.Close()
+			fmt.Println(color.YellowString(fmt.Sprintf("[+] RCCD %s successfully installed.", sourcePath)))
+		}
+	}
 
-			if _, err := io.Copy(f2, f); err != nil {
-				fmt.Println(color.RedString(fmt.Sprintf("[+] Could not copy %s to %s: %s.", sourcePath, destPath, err.Error())))
+	if r, err := rccd.Open(destPath); err != nil {
+	} else if home, err := homedir.Dir(); err != nil {
+	} else {
+		loginKeychain := path.Join(home, "Library", "Keychains", "login.keychain")
+
+		for _, c := range []*x509.Certificate{r.SCA, r.PCA, r.UCA} {
+			tmpfile, err := ioutil.TempFile("", "keytalk")
+			if err != nil {
 				return
+			}
+
+			defer os.Remove(tmpfile.Name())
+
+			cert2 := &pem.Block{Type: "CERTIFICATE", Bytes: c.Raw}
+			if err := pem.Encode(tmpfile, cert2); err != nil {
+				fmt.Println(color.RedString(fmt.Sprintf("[+] Could not copy %s to %s: %s.", sourcePath, destPath, err.Error())))
+			}
+
+			cmd := exec.Command("/usr/bin/security", "add-trusted-cert", "-r", "trustRoot", "-k", loginKeychain, tmpfile.Name())
+			if err := cmd.Run(); err != nil {
+				fmt.Println(color.RedString(fmt.Sprintf("[+] Could install ca certificate: %s.", err.Error())))
 			} else {
-				fmt.Println(color.YellowString(fmt.Sprintf("[+] RCCD %s successfully installed.", sourcePath)))
+				fmt.Println(color.YellowString(fmt.Sprintf("[+] Installed ca certificate.")))
 			}
 		}
+	}
+}
+
+func configPath(c *cli.Context) string {
+	home := ""
+	if v, err := homedir.Dir(); err != nil {
+		return ""
+	} else {
+		home = v
+	}
+
+	if v, err := filepath.Abs(strings.Replace(c.GlobalString("config"), "~", home, -1)); err == nil {
+		return v
+	} else {
+		return c.GlobalString("config")
 	}
 }
 
@@ -214,7 +289,7 @@ func main() {
 
 	app.Action = func(c *cli.Context) {
 		var config client.Config
-		if _, err := toml.DecodeFile(c.String("config"), &config); err != nil {
+		if _, err := toml.DecodeFile(configPath(c), &config); err != nil {
 			panic(err)
 		}
 
@@ -260,8 +335,8 @@ func main() {
 			for {
 				select {
 				case s := <-signalCh:
-					fmt.Println(s)
 					if s == os.Interrupt {
+						os.Exit(0)
 					} else if s == syscall.SIGUSR1 {
 					}
 				}

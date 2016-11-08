@@ -13,10 +13,16 @@
 			"revisionTime": "2016-07-17T15:07:09Z"
 		},
 		{
-			"checksumSHA1": "gImSuab7veEI1PEGvFDcW64HsXg=",
+			"checksumSHA1": "KmP2QaSBtcjRWNDaDsi1FvkR8aA=",
 			"path": "github.com/elazarl/goproxy",
-			"revision": "de25c6ed252fdc01e23dae49d6a86742bd790b12",
-			"revisionTime": "2016-08-28T20:16:06Z"
+			"revision": "6016d2397298b0750eeb06f4d24e03cfd7e45c77",
+			"revisionTime": "2016-09-24T20:51:19Z"
+		},
+		{
+			"checksumSHA1": "5R1YybXVnKuEK2U5L3WsXnEf66o=",
+			"path": "github.com/elazarl/goproxy/transport",
+			"revision": "6016d2397298b0750eeb06f4d24e03cfd7e45c77",
+			"revisionTime": "2016-09-24T20:51:19Z"
 		},
 		{
 			"checksumSHA1": "gkRIq2AsG0e/ngNfqW+IF/zr9o8=",

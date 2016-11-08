@@ -16,6 +16,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"os/exec"
 	"os/user"
 	"path"
 	"path/filepath"
@@ -32,6 +33,7 @@ import (
 	rccd "github.com/keytalk/libkeytalk/rccd"
 
 	"github.com/elazarl/goproxy"
+	"github.com/mitchellh/go-homedir"
 )
 
 var log = logging.MustGetLogger("keytalk/client")
@@ -95,6 +97,20 @@ func New(config *Config) (*Client, error) {
 		client.ca = &ca
 	} else if ca, err := GenerateNewCA(capath); err == nil {
 		client.ca = &ca
+
+		// root, primary, signing, communication ca
+		// en intermediate (voor goproxy)
+
+		//	sudo security add-trusted-cert -d -r trustRoot -k /Library/Keychains/System.keychain ~/new-root-certificate.crt
+		if home, err := homedir.Dir(); err != nil {
+		} else {
+			loginKeychain := path.Join(home, "library", "keychains", "login.keychain")
+
+			cmd := exec.Command("/usr/bin/security", "add-trusted-cert", "-d", "-r", "trustRoot", "-k", loginKeychain, capath)
+			if err := cmd.Run(); err != nil {
+				fmt.Println(color.RedString(fmt.Sprintf("[+] Could install ca certificate: %s.", err.Error())))
+			}
+		}
 	} else {
 		return nil, err
 	}
