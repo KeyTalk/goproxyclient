@@ -98,17 +98,15 @@ func New(config *Config) (*Client, error) {
 	} else if ca, err := GenerateNewCA(capath); err == nil {
 		client.ca = &ca
 
-		// root, primary, signing, communication ca
-		// en intermediate (voor goproxy)
-
-		//	sudo security add-trusted-cert -d -r trustRoot -k /Library/Keychains/System.keychain ~/new-root-certificate.crt
 		if home, err := homedir.Dir(); err != nil {
 		} else {
-			loginKeychain := path.Join(home, "library", "keychains", "login.keychain")
+			loginKeychain := path.Join(home, "Library", "Keychains", "login.keychain")
 
-			cmd := exec.Command("/usr/bin/security", "add-trusted-cert", "-d", "-r", "trustRoot", "-k", loginKeychain, capath)
+			cmd := exec.Command("/usr/bin/security", "add-trusted-cert", "-r", "trustRoot", "-k", loginKeychain, capath)
 			if err := cmd.Run(); err != nil {
-				fmt.Println(color.RedString(fmt.Sprintf("[+] Could install ca certificate: %s.", err.Error())))
+				fmt.Println(color.RedString(fmt.Sprintf("[+] Could not install ca certificate: %s.", err.Error())))
+			} else {
+				fmt.Println(color.YellowString(fmt.Sprintf("[+] CA Certificate added to trusted root.")))
 			}
 		}
 	} else {
@@ -274,6 +272,47 @@ func (client *Client) ListenAndServe() {
 
 	proxy := goproxy.NewProxyHttpServer()
 
+	proxy.OnRequest().DoFunc(func(req *http.Request, ctx *goproxy.ProxyCtx) (*http.Request, *http.Response) {
+		for _, rccd := range client.rccds {
+			for _, provider := range rccd.Providers {
+				for _, service := range provider.Services {
+					if u, err := url.Parse(service.Uri); err != nil {
+						continue
+					} else if u.Host != req.Host {
+						continue
+					}
+
+					fmt.Println(color.YellowString(fmt.Sprintf("[+] Found service %s for uri %s.", service.Name, service.Uri)))
+
+					if credential, ok := client.credentials[provider.Name]; !ok {
+						ctx.RoundTripper = &RoundTripper{
+							rccd:     rccd,
+							provider: &provider,
+							service:  &service,
+							client:   client,
+						}
+					} else if err := credential.Valid(); err != nil {
+						ctx.RoundTripper = &RoundTripper{
+							rccd:     rccd,
+							provider: &provider,
+							service:  &service,
+							client:   client,
+						}
+					} else {
+						ctx.RoundTripper = &RoundTripper2{
+							client:     client,
+							credential: credential,
+						}
+					}
+
+					return req, nil
+				}
+			}
+		}
+
+		return req, nil
+	})
+
 	proxy.OnRequest().
 		HandleConnect(goproxy.FuncHttpsHandler(func(host string, ctx *goproxy.ProxyCtx) (*goproxy.ConnectAction, string) {
 			if h, _, err := net.SplitHostPort(host); err != nil {
@@ -290,28 +329,6 @@ func (client *Client) ListenAndServe() {
 
 							fmt.Println(color.YellowString(fmt.Sprintf("[+] Found service %s for uri %s.", service.Name, service.Uri)))
 
-							// todo check validity
-							if credential, ok := client.credentials[provider.Name]; !ok {
-								ctx.RoundTripper = &RoundTripper{
-									rccd:     rccd,
-									provider: &provider,
-									service:  &service,
-									client:   client,
-								}
-							} else if err := credential.Valid(); err != nil {
-								ctx.RoundTripper = &RoundTripper{
-									rccd:     rccd,
-									provider: &provider,
-									service:  &service,
-									client:   client,
-								}
-							} else {
-								ctx.RoundTripper = &RoundTripper2{
-									client:     client,
-									credential: credential,
-								}
-							}
-
 							return &goproxy.ConnectAction{
 								Action:    goproxy.ConnectMitm,
 								TLSConfig: client.TLSConfigFromCA,
@@ -320,11 +337,26 @@ func (client *Client) ListenAndServe() {
 					}
 				}
 			}
+			/*
+				tr := transport.Transport{Proxy: func(*http.Request) (*url.URL, error) {
+					return nil, nil
+				}}
+
+				ctx.RoundTripper = goproxy.RoundTripperFunc(func(req *http.Request, ctx *goproxy.ProxyCtx) (resp *http.Response, err error) {
+					ctx.UserData, resp, err = tr.DetailedRoundTrip(req)
+					return
+				})
+
+				return &goproxy.ConnectAction{
+					Action:    goproxy.ConnectAccept,
+					TLSConfig: client.TLSConfigFromCA,
+				}, host
+			*/
 
 			return goproxy.OkConnect, host
 		}))
 
-	proxy.Verbose = false
+	proxy.Verbose = true
 
 	if err := http.ListenAndServe(client.config.ListenerString, proxy); err != nil {
 		panic(err)
