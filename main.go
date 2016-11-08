@@ -14,6 +14,7 @@ import (
 	"os/signal"
 	"path"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"syscall"
 
@@ -120,7 +121,41 @@ func Stop(c *cli.Context) {
 	}
 }
 
+func GetActiveNetworkService() string {
+	cmd := exec.Command("/usr/sbin/networksetup", "-listnetworkserviceorder")
+	if output, err := cmd.Output(); err != nil {
+		log.Info("Could not retrieve output", err.Error())
+	} else {
+		re := regexp.MustCompile(`\(Hardware Port: ([^,]+), Device: ([a-z0-9]+)\)`)
+		matches := re.FindAllStringSubmatch(string(output), -1)
+
+		for _, match := range matches {
+			cmd := exec.Command("/sbin/ifconfig", match[2])
+			if output, err := cmd.Output(); err != nil {
+				// log.Errorf("Could not read output of ifconfig (%s): %s", match[2], err.Error())
+			} else if matched, err := regexp.MatchString("status: active", string(output)); err != nil {
+				log.Errorf("Could not match output (%s): %s", match[2], err.Error())
+			} else if matched {
+				return (strings.TrimSpace(match[1]))
+			}
+		}
+	}
+
+	return ""
+}
+
 func Install(c *cli.Context) {
+	network := GetActiveNetworkService()
+
+	cmd := exec.Command("/usr/sbin/networksetup", "-setsecurewebproxy", network, "127.0.0.1", "8080")
+	if err := cmd.Run(); err != nil {
+		fmt.Println(color.RedString(fmt.Sprintf("[+] Error configuring proxy for network service %s: %s.", network, err.Error())))
+	} else {
+		fmt.Println(color.YellowString(fmt.Sprintf("[+] Proxy configured for network service %s.", network)))
+	}
+
+	return
+
 	if home, err := homedir.Dir(); err != nil {
 		fmt.Println(color.RedString(fmt.Sprintf("[+] Could retrieve homedir: %s.", err.Error())))
 		return

@@ -282,8 +282,6 @@ func (client *Client) ListenAndServe() {
 						continue
 					}
 
-					fmt.Println(color.YellowString(fmt.Sprintf("[+] Found service %s for uri %s.", service.Name, service.Uri)))
-
 					if credential, ok := client.credentials[provider.Name]; !ok {
 						ctx.RoundTripper = &RoundTripper{
 							rccd:     rccd,
@@ -356,7 +354,7 @@ func (client *Client) ListenAndServe() {
 			return goproxy.OkConnect, host
 		}))
 
-	proxy.Verbose = true
+	proxy.Verbose = false
 
 	if err := http.ListenAndServe(client.config.ListenerString, proxy); err != nil {
 		panic(err)
