@@ -31,6 +31,12 @@
 			"revisionTime": "2016-06-10T11:06:02Z"
 		},
 		{
+			"checksumSHA1": "hveFTNQ9YEyYRs6SWuXM+XU9qRI=",
+			"path": "github.com/fsnotify/fsnotify",
+			"revision": "fd9ec7deca8bf46ecd2a795baaacf2b3a9be1197",
+			"revisionTime": "2016-10-26T20:31:22Z"
+		},
+		{
 			"checksumSHA1": "g/V4qrXjUGG9B+e3hB+4NAYJ5Gs=",
 			"path": "github.com/gorilla/context",
 			"revision": "08b5f424b9271eedf6f9f0ce86cb9396ed337a42",
@@ -109,10 +115,10 @@
 			"revisionTime": "2016-09-09T01:05:11Z"
 		},
 		{
-			"checksumSHA1": "8fD/im5Kwvy3JgmxulDTambmE8w=",
+			"checksumSHA1": "2e4afOQfHP7YB4P68v6SlnAVJDk=",
 			"path": "golang.org/x/sys/unix",
-			"revision": "30de6d19a3bd89a5f38ae4028e23aaa5582648af",
-			"revisionTime": "2016-09-07T05:59:14Z"
+			"revision": "9a2e24c3733eddc63871eda99f253e2db29bd3b9",
+			"revisionTime": "2016-11-08T14:26:43Z"
 		}
 	],
 	"rootPath": "github.com/keytalk/client"

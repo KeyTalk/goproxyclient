@@ -20,6 +20,7 @@ import (
 
 	"github.com/BurntSushi/toml"
 	"github.com/fatih/color"
+	"github.com/fsnotify/fsnotify"
 	"github.com/kardianos/osext"
 	"github.com/keytalk/client/client"
 	"github.com/keytalk/rccd"
@@ -227,56 +228,14 @@ func Install(c *cli.Context) {
 	}
 }
 
-func Load(c *cli.Context) {
-	if len(c.Args()) != 1 {
-		fmt.Println("Usage: keytalk load {rccd file}")
-		return
-	}
-
-	sourcePath := c.Args()[0]
-
-	if _, err := rccd.Open(sourcePath); err != nil {
-		fmt.Println(color.RedString(fmt.Sprintf("[+] Invalid rccd file %s: %s.", sourcePath, err.Error())))
-		return
-	}
-
-	f, err := os.Open(sourcePath)
-	if err != nil {
-		fmt.Println(color.RedString(fmt.Sprintf("[+] Could not open file %s: %s.", sourcePath, err.Error())))
-		return
-	}
-
-	defer f.Close()
-
-	home := ""
-	if v, err := homedir.Dir(); err != nil {
-		fmt.Println(color.RedString(fmt.Sprintf("[+] Could retrieve homedir: %s.", err.Error())))
-		return
-	} else {
-		home = v
-	}
-
-	destPath := path.Join(home, ".keytalk", path.Base(c.Args()[0]))
-	if f2, err := os.Create(destPath); err != nil {
-		fmt.Println(color.RedString(fmt.Sprintf("[+] Could not create %s: %s.", destPath, err.Error())))
-		return
-	} else {
-		defer f2.Close()
-
-		if _, err := io.Copy(f2, f); err != nil {
-			fmt.Println(color.RedString(fmt.Sprintf("[+] Could not copy %s to %s: %s.", sourcePath, destPath, err.Error())))
-			return
-		} else {
-			fmt.Println(color.YellowString(fmt.Sprintf("[+] RCCD %s successfully installed.", sourcePath)))
-		}
-	}
-
-	if r, err := rccd.Open(destPath); err != nil {
+func loadRCCD(p string) {
+	if r, err := rccd.Open(p); err != nil {
+		log.Error("Could not load rccd file: %s", err.Error())
 	} else if home, err := homedir.Dir(); err != nil {
 	} else {
 		loginKeychain := path.Join(home, "Library", "Keychains", "login.keychain")
 
-		for _, c := range []*x509.Certificate{r.SCA, r.PCA, r.UCA} {
+		for _, c := range []*x509.Certificate{r.PCA, r.UCA} {
 			tmpfile, err := ioutil.TempFile("", "keytalk")
 			if err != nil {
 				return
@@ -286,7 +245,7 @@ func Load(c *cli.Context) {
 
 			cert2 := &pem.Block{Type: "CERTIFICATE", Bytes: c.Raw}
 			if err := pem.Encode(tmpfile, cert2); err != nil {
-				fmt.Println(color.RedString(fmt.Sprintf("[+] Could not copy %s to %s: %s.", sourcePath, destPath, err.Error())))
+				fmt.Println(color.RedString(fmt.Sprintf("[+] Could not write %s: %s.", tmpfile, err.Error())))
 			}
 
 			cmd := exec.Command("/usr/bin/security", "add-trusted-cert", "-r", "trustRoot", "-k", loginKeychain, tmpfile.Name())
@@ -325,6 +284,46 @@ func configPath(c *cli.Context) string {
 	}
 }
 
+func runWatcher(c *cli.Context) {
+	watcher, err := fsnotify.NewWatcher()
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	defer watcher.Close()
+
+	done := make(chan bool)
+	go func() {
+		for {
+			select {
+			case event := <-watcher.Events:
+				if path.Ext(event.Name) != ".rccd" {
+					continue
+				}
+
+				if event.Op != fsnotify.Write {
+					continue
+				}
+
+				loadRCCD(event.Name)
+			case err := <-watcher.Errors:
+				log.Error("error:", err)
+			}
+		}
+	}()
+
+	dir, err := configDir(c)
+	if err != nil {
+
+	}
+
+	err = watcher.Add(dir)
+	if err != nil {
+		log.Fatal(err)
+	}
+	<-done
+}
+
 func main() {
 	// Set up app.
 	app := cli.NewApp()
@@ -346,10 +345,6 @@ func main() {
 		{
 			Name:   "stop",
 			Action: Stop,
-		},
-		{
-			Name:   "load",
-			Action: Load,
 		},
 	}
 
@@ -410,6 +405,10 @@ func main() {
 		}
 
 		logging.SetBackend(logBackends...)
+
+		go runWatcher(c)
+
+		log.Infof("BLA %s", c.Args()[0:])
 
 		// todo(nl5887): move trap signals to Main, this is not supposed to be in Serve
 		signalCh := make(chan os.Signal, 1)
