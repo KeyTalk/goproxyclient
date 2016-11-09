@@ -105,6 +105,18 @@ const LaunchAgent = `<?xml version="1.0" encoding="UTF-8"?>
 </dict>
 </plist>`
 
+const ConfigFile = `
+listen = "127.0.0.1:8080"
+
+[[logging]]
+output = "$HOME/.keytalk/log.txt"
+level = "debug"
+
+[[logging]]
+output = "stdout"
+level = "debug"
+`
+
 func Start(c *cli.Context) {
 	cmd := exec.Command("launchctl", "start", "com.keytalk.client")
 	if err := cmd.Run(); err != nil {
@@ -154,13 +166,25 @@ func Install(c *cli.Context) {
 		fmt.Println(color.YellowString(fmt.Sprintf("[+] Proxy configured for network service %s.", network)))
 	}
 
-	return
-
 	if home, err := homedir.Dir(); err != nil {
 		fmt.Println(color.RedString(fmt.Sprintf("[+] Could retrieve homedir: %s.", err.Error())))
 		return
 	} else {
-		destPath := path.Join(home, "Library", "LaunchAgents", "com.keytalk.plist")
+		destPath := path.Join(home, ".keytalk")
+
+		if f, err := os.Create(path.Join(destPath, "config.toml")); err != nil {
+			fmt.Println(color.RedString(fmt.Sprintf("[+] Could not create %s: %s.", destPath, err.Error())))
+			return
+		} else {
+			defer f.Close()
+
+			if _, err := io.Copy(f, strings.NewReader(ConfigFile)); err != nil {
+				fmt.Println(color.RedString(fmt.Sprintf("[+] Could not create configfile %s: %s.", destPath, err.Error())))
+				return
+			}
+		}
+
+		destPath = path.Join(home, "Library", "LaunchAgents", "com.keytalk.plist")
 
 		t := template.New("")
 
@@ -275,6 +299,17 @@ func Load(c *cli.Context) {
 	}
 }
 
+func configDir(c *cli.Context) (string, error) {
+	home := ""
+	if v, err := homedir.Dir(); err != nil {
+		return "", err
+	} else {
+		home = v
+	}
+
+	return path.Join(home, ".keytalk"), nil
+}
+
 func configPath(c *cli.Context) string {
 	home := ""
 	if v, err := homedir.Dir(); err != nil {
@@ -323,6 +358,20 @@ func main() {
 	}
 
 	app.Action = func(c *cli.Context) {
+		home := ""
+		if v, err := configDir(c); err != nil {
+			fmt.Println(color.RedString(fmt.Sprintf("[+] Could retrieve config directory: %s.", err.Error())))
+			return
+		} else {
+			home = v
+		}
+
+		if _, err := os.Stat(path.Join(home, ".keytalk", "config.toml")); err == nil {
+		} else if os.IsNotExist(err) {
+			// config doesn't exist, install
+			Install(c)
+		}
+
 		var config client.Config
 		if _, err := toml.DecodeFile(configPath(c), &config); err != nil {
 			panic(err)
