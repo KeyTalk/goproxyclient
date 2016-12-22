@@ -264,12 +264,13 @@ func (client *Client) TLSConfigFromCA(host string, ctx *goproxy.ProxyCtx) (*tls.
 	}
 }
 
-func (client *Client) ReloadRCCDs() error {
+func (client *Client) reloadRCCDs() error {
 	if keytalkPath, err := KeytalkPath(); err != nil {
 		return err
 	} else if err := client.loadRCCDs(keytalkPath); err != nil {
 		return err
 	} else {
+		log.Debug("Reloaded RCCDs.")
 		return nil
 	}
 }
@@ -348,11 +349,20 @@ func (c *connection) readPump() {
 
 	for {
 		_, message, err := c.ws.ReadMessage()
-		if err != nil {
-			if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway) {
-				log.Errorf("error: %v", err)
-			}
-			break
+		if err == nil {
+		} else if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway) {
+			log.Errorf("error: %v", err)
+			continue
+		}
+
+		v := map[string]interface{}{}
+		if err := json.NewDecoder(bytes.NewBuffer(message)).Decode(&v); err != nil {
+			log.Error("error: %v", err)
+			continue
+		}
+
+		if v["type"] == "reload" {
+			c.client.reloadRCCDs()
 		}
 
 		fmt.Printf("%#v\n", message)

@@ -33,7 +33,7 @@ var globalFlags = []cli.Flag{
 	cli.StringFlag{
 		Name:  "c,config",
 		Usage: "config file",
-		Value: "~/.keytalk/config.toml",
+		Value: "~/Library/Keytalk/config.toml",
 	},
 	cli.BoolFlag{
 		Name:  "help, h",
@@ -46,7 +46,7 @@ var (
 )
 
 var helpTemplate = `NAME:
-{{.Name}} - {{.Usage}}
+{{.Name} - {{.Usage}}
 
 DESCRIPTION:
 {{.Description}}
@@ -103,12 +103,12 @@ const ConfigFile = `
 listen = "127.0.0.1:8080"
 
 [[logging]]
-output = "$HOME/.keytalk/log.txt"
-level = "debug"
+output = "$HOME/Library/Logs/keytalk.log"
+level = "info"
 
 [[logging]]
 output = "stdout"
-level = "debug"
+level = "info"
 `
 
 func run(c *cli.Context) {
@@ -169,9 +169,6 @@ func run(c *cli.Context) {
 				if s == os.Interrupt {
 					os.Exit(0)
 				} else if s == syscall.SIGUSR1 {
-					// reload
-					log.Debug("Reloading RCCDs")
-					client.ReloadRCCDs()
 				}
 			}
 		}
@@ -212,17 +209,6 @@ func bootstrap(c *cli.Context) {
 			log.Error("Error generating CA: %s", err.Error())
 		}
 	}
-}
-
-func configDir(c *cli.Context) (string, error) {
-	keytalkPath := ""
-	if v, err := client.KeytalkPath(); err != nil {
-		return "", err
-	} else {
-		keytalkPath = v
-	}
-
-	return path.Join(keytalkPath, ".keytalk"), nil
 }
 
 func configPath(c *cli.Context) string {
