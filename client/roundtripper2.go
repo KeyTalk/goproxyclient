@@ -76,7 +76,9 @@ func (rt *RoundTripper2) RoundTrip(req *http.Request, ctx *goproxy.ProxyCtx) (*h
 
 			ctx.SetSessionId([]byte{1})
 
-			if err := ctx.LoadVerifyLocations(path.Join(rt.client.keytalkPath, "ca-bundle.pem"), ""); err != nil {
+			if keytalkPath, err := KeytalkPath(); err != nil {
+				return nil, err
+			} else if err := ctx.LoadVerifyLocations(path.Join(keytalkPath, "ca-bundle.pem"), ""); err != nil {
 				return nil, fmt.Errorf("Error loading verify locations: %s", err.Error())
 			}
 

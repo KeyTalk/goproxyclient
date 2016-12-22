@@ -13,6 +13,12 @@
 			"revisionTime": "2016-07-17T15:07:09Z"
 		},
 		{
+			"checksumSHA1": "86jNufeBdE216SNojNeVYj4tCxw=",
+			"path": "github.com/elazarl/go-bindata",
+			"revision": "cf5c5f89b99e9c2f4f0a60034b66c5f5c0d8ea78",
+			"revisionTime": "2014-07-13T06:59:24Z"
+		},
+		{
 			"checksumSHA1": "KmP2QaSBtcjRWNDaDsi1FvkR8aA=",
 			"path": "github.com/elazarl/goproxy",
 			"revision": "6016d2397298b0750eeb06f4d24e03cfd7e45c77",
@@ -47,6 +53,12 @@
 			"path": "github.com/gorilla/mux",
 			"revision": "0a192a193177452756c362c20087ddafcf6829c4",
 			"revisionTime": "2016-09-02T15:33:43Z"
+		},
+		{
+			"checksumSHA1": "B4bk7vdV9aD7AhrtATXfgEacdqE=",
+			"path": "github.com/gorilla/websocket",
+			"revision": "3ab3a8b8831546bd18fd182c20687ca853b2bb13",
+			"revisionTime": "2016-12-15T22:53:35Z"
 		},
 		{
 			"checksumSHA1": "eOXF2PEvYLMeD8DSzLZJWbjYzco=",

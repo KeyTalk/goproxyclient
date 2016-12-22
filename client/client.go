@@ -16,7 +16,6 @@ import (
 	"net/http"
 	"net/url"
 	"os"
-	"os/exec"
 	"os/user"
 	"path"
 	"path/filepath"
@@ -30,13 +29,30 @@ import (
 
 	glob "github.com/ryanuber/go-glob"
 
+	"github.com/keytalk/client/bindata"
 	rccd "github.com/keytalk/libkeytalk/rccd"
 
+	"bytes"
+	"encoding/json"
 	"github.com/elazarl/goproxy"
-	"github.com/mitchellh/go-homedir"
+	"github.com/gorilla/websocket"
 )
 
 var log = logging.MustGetLogger("keytalk/client")
+
+const (
+	// Time allowed to write a message to the peer.
+	writeWait = 10 * time.Second
+
+	// Time allowed to read the next pong message from the peer.
+	pongWait = 60 * time.Second
+
+	// Send pings to peer with this period. Must be less than pongWait.
+	pingPeriod = 1 * time.Second
+
+	// Maximum message size allowed from peer.
+	maxMessageSize = 512
+)
 
 type Client struct {
 	listener net.Listener
@@ -49,9 +65,41 @@ type Client struct {
 	tlsconfig *tls.Config
 	ca        *tls.Certificate
 
-	credentials map[string]*Credential
+	hub *Hub
 
-	keytalkPath string
+	credentials map[string]*Credential
+}
+
+func KeytalkPath() (string, error) {
+	if usr, err := user.Current(); err != nil {
+		return "", err
+	} else {
+		keytalkPath := path.Join(usr.HomeDir, "Library", "Keytalk")
+		if _, err := os.Stat(keytalkPath); err == nil {
+		} else if !os.IsNotExist(err) {
+			return "", err
+		} else if err = os.Mkdir(keytalkPath, 0700); err != nil {
+			return "", err
+		}
+
+		return keytalkPath, nil
+	}
+}
+
+func CachePath() (string, error) {
+	if keytalkPath, err := KeytalkPath(); err != nil {
+		return "", err
+	} else {
+		cachePath := path.Join(keytalkPath, "cache")
+		if _, err := os.Stat(cachePath); err == nil {
+		} else if !os.IsNotExist(err) {
+			return "", err
+		} else if err = os.Mkdir(cachePath, 0700); err != nil {
+			return "", err
+		}
+
+		return cachePath, nil
+	}
 }
 
 func New(config *Config) (*Client, error) {
@@ -59,71 +107,37 @@ func New(config *Config) (*Client, error) {
 		rccds:  []*rccd.RCCD{},
 		config: config,
 
+		hub: newHub(),
+
 		credentials: map[string]*Credential{},
 	}
 
-	if t, err := template.New("index.html").ParseFiles("./static/index.html"); err != nil {
+	str := ""
+	if b, err := bindata.StaticIndexHtmlBytes(); err != nil {
+		panic(err)
+	} else {
+		str = string(b)
+	}
+
+	if t, err := template.New("index.html").Parse(str); err != nil {
 		return nil, err
 	} else {
 		client.template = t
 	}
 
-	if usr, err := user.Current(); err != nil {
+	if keytalkPath, err := KeytalkPath(); err != nil {
 		return nil, err
-	} else {
-		keytalkPath := path.Join(usr.HomeDir, ".keytalk")
-		if _, err := os.Stat(keytalkPath); err == nil {
-		} else if !os.IsNotExist(err) {
-			return nil, err
-		} else if err = os.Mkdir(keytalkPath, 0700); err != nil {
-			return nil, err
-		}
-
-		cachePath := path.Join(keytalkPath, "cache")
-		if _, err := os.Stat(cachePath); err == nil {
-		} else if !os.IsNotExist(err) {
-			return nil, err
-		} else if err = os.Mkdir(cachePath, 0700); err != nil {
-			return nil, err
-		}
-
-		// download ca-bundle? or in rccd?
-
-		client.keytalkPath = keytalkPath
+	} else if err := client.loadRCCDs(keytalkPath); err != nil {
+		return nil, err
 	}
 
-	capath := path.Join(client.keytalkPath, "ca.pem")
-	if ca, err := LoadCA(capath); err == nil {
-		client.ca = &ca
-	} else if ca, err := GenerateNewCA(capath); err == nil {
-		client.ca = &ca
-
-		if home, err := homedir.Dir(); err != nil {
-		} else {
-			loginKeychain := path.Join(home, "Library", "Keychains", "login.keychain")
-
-			cmd := exec.Command("/usr/bin/security", "add-trusted-cert", "-r", "trustRoot", "-k", loginKeychain, capath)
-			if err := cmd.Run(); err != nil {
-				fmt.Println(color.RedString(fmt.Sprintf("[+] Could not install ca certificate: %s.", err.Error())))
-			} else {
-				fmt.Println(color.YellowString(fmt.Sprintf("[+] CA Certificate added to trusted root.")))
-			}
-		}
+	if keytalkPath, err := KeytalkPath(); err != nil {
+		fmt.Println(color.RedString(fmt.Sprintf("[+] Could retrieve keytalk path: %s.", err.Error())))
+		return nil, err
+	} else if cert, err := LoadCA(path.Join(keytalkPath, "ca.pem")); err == nil {
+		client.ca = &cert
 	} else {
 		return nil, err
-	}
-
-	if err := client.loadRCCDs(client.keytalkPath); err != nil {
-		return nil, err
-	}
-
-	for _, rccd := range client.rccds {
-		cert := &pem.Block{Type: "CERTIFICATE", Bytes: rccd.UCA.Raw}
-		ioutil.WriteFile(path.Join(client.keytalkPath, "certs", fmt.Sprintf("uca.pem")), pem.EncodeToMemory(cert), 0600)
-		cert = &pem.Block{Type: "CERTIFICATE", Bytes: rccd.SCA.Raw}
-		ioutil.WriteFile(path.Join(client.keytalkPath, "certs", fmt.Sprintf("sca.pem")), pem.EncodeToMemory(cert), 0600)
-		cert = &pem.Block{Type: "CERTIFICATE", Bytes: rccd.PCA.Raw}
-		ioutil.WriteFile(path.Join(client.keytalkPath, "certs", fmt.Sprintf("pca.pem")), pem.EncodeToMemory(cert), 0600)
 	}
 
 	return &client, nil
@@ -160,11 +174,10 @@ func signHost(ca tls.Certificate, hosts []string) (cert tls.Certificate, err err
 	start := time.Now()
 	end := start.Add(time.Hour * 24 * 365)
 
-	hash := hashSorted(append(hosts, goproxySignerVersion, ":"+runtime.Version()))
+	hash := hashSorted(append(hosts, goproxySignerVersion, ":"+runtime.Version()+":"+time.Now().Format("RFC3339")))
+	fmt.Println(append(hosts, goproxySignerVersion, ":"+runtime.Version()+":"+time.Now().Format("RFC3339")))
 	serial := new(big.Int)
 	serial.SetBytes(hash)
-
-	// todo(nl5887): retrieve tls certificate from dest? anduse subject name and organization of dest cert?
 
 	template := x509.Certificate{
 		// TODO(elazar): instead of this ugly hack, just encode the certificate and hash the binary form.
@@ -220,31 +233,45 @@ func (client *Client) TLSConfigFromCA(host string, ctx *goproxy.ProxyCtx) (*tls.
 	config := defaultTLSConfig
 	ctx.Logf("signing for %s", stripPort(host))
 
-	certPath := path.Join(client.keytalkPath, "cache", stripPort(host)+".pem")
-
-	if data, err := ioutil.ReadFile(certPath); os.IsNotExist(err) {
-		if cert, err := signHost(*client.ca, []string{stripPort(host)}); err != nil {
-			ctx.Warnf("Cannot sign host certificate with provided CA: %s", err)
-			return nil, err
-		} else if f, err := os.OpenFile(certPath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0600); err != nil {
-			return nil, err
-		} else {
-			defer f.Close()
-
-			pem.Encode(f, &pem.Block{Type: "CERTIFICATE", Bytes: cert.Certificate[0]})
-			pem.Encode(f, &pem.Block{Type: "RSA PRIVATE KEY", Bytes: x509.MarshalPKCS1PrivateKey(cert.PrivateKey.(*rsa.PrivateKey))})
-
-			config.Certificates = append(config.Certificates, cert)
-		}
-	} else if err != nil {
-		return nil, err
-	} else if cert, err := tls.X509KeyPair(data, data); err != nil {
+	if cachePath, err := CachePath(); err != nil {
 		return nil, err
 	} else {
-		config.Certificates = append(config.Certificates, cert)
-	}
+		certPath := path.Join(cachePath, stripPort(host)+".pem")
 
-	return config, nil
+		if data, err := ioutil.ReadFile(certPath); os.IsNotExist(err) {
+			if cert, err := signHost(*client.ca, []string{stripPort(host)}); err != nil {
+				ctx.Warnf("Cannot sign host certificate with provided CA: %s", err)
+				return nil, err
+			} else if f, err := os.OpenFile(certPath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0600); err != nil {
+				return nil, err
+			} else {
+				defer f.Close()
+
+				pem.Encode(f, &pem.Block{Type: "CERTIFICATE", Bytes: cert.Certificate[0]})
+				pem.Encode(f, &pem.Block{Type: "RSA PRIVATE KEY", Bytes: x509.MarshalPKCS1PrivateKey(cert.PrivateKey.(*rsa.PrivateKey))})
+
+				config.Certificates = append(config.Certificates, cert)
+			}
+		} else if err != nil {
+			return nil, err
+		} else if cert, err := tls.X509KeyPair(data, data); err != nil {
+			return nil, err
+		} else {
+			config.Certificates = append(config.Certificates, cert)
+		}
+
+		return config, nil
+	}
+}
+
+func (client *Client) ReloadRCCDs() error {
+	if keytalkPath, err := KeytalkPath(); err != nil {
+		return err
+	} else if err := client.loadRCCDs(keytalkPath); err != nil {
+		return err
+	} else {
+		return nil
+	}
 }
 
 func (client *Client) loadRCCDs(path string) error {
@@ -263,6 +290,107 @@ func (client *Client) loadRCCDs(path string) error {
 
 		return nil
 	})
+}
+
+func (client *Client) serveWs(w http.ResponseWriter, r *http.Request) {
+	ws, err := upgrader.Upgrade(w, r, nil)
+	if err != nil {
+		log.Error(err)
+		return
+	}
+
+	_ = ws
+
+	log.Info("Connection upgraded.")
+
+	c := &connection{send: make(chan interface{}, 256), ws: ws, client: client}
+	client.hub.register <- c
+
+	go c.writePump()
+	c.readPump()
+
+	log.Info("Connection closed")
+}
+
+// write writes a message with the given message type and payload.
+func (c *connection) write(mt int, payload []byte) error {
+	c.ws.SetWriteDeadline(time.Now().Add(writeWait))
+	return c.ws.WriteMessage(mt, payload)
+}
+
+var upgrader = websocket.Upgrader{
+	ReadBufferSize:  1024,
+	WriteBufferSize: 1024,
+	CheckOrigin: func(r *http.Request) bool {
+		return true
+	},
+}
+
+type connection struct {
+	ws     *websocket.Conn
+	send   chan interface{}
+	b      int
+	client *Client
+}
+
+func (c *connection) readPump() {
+	defer func() {
+		c.client.hub.unregister <- c
+		c.ws.Close()
+	}()
+
+	c.ws.SetReadLimit(maxMessageSize)
+	c.ws.SetReadDeadline(time.Now().Add(pongWait))
+	c.ws.SetPongHandler(func(string) error {
+		c.ws.SetReadDeadline(time.Now().Add(pongWait))
+		return nil
+	})
+
+	for {
+		_, message, err := c.ws.ReadMessage()
+		if err != nil {
+			if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway) {
+				log.Errorf("error: %v", err)
+			}
+			break
+		}
+
+		fmt.Printf("%#v\n", message)
+
+	}
+}
+
+// writePump pumps messages from the hub to the websocket connection.
+func (c *connection) writePump() {
+	ticker := time.NewTicker(pingPeriod)
+	defer func() {
+		ticker.Stop()
+		c.ws.Close()
+	}()
+
+	for {
+		select {
+		case message, ok := <-c.send:
+			if !ok {
+				c.write(websocket.CloseMessage, []byte{})
+				return
+			}
+
+			buff := new(bytes.Buffer)
+			if err := json.NewEncoder(buff).Encode(message); err != nil {
+				log.Error(err.Error())
+				return
+			} else if err := c.write(websocket.BinaryMessage, buff.Bytes()); err != nil {
+				log.Error(err.Error())
+				return
+			}
+		case <-ticker.C:
+			if err := c.write(websocket.PingMessage, []byte{}); err != nil {
+				log.Error("%#v", err.Error())
+				return
+			}
+		}
+	}
 }
 
 func (client *Client) ListenAndServe() {
@@ -355,6 +483,20 @@ func (client *Client) ListenAndServe() {
 		}))
 
 	proxy.Verbose = false
+
+	go client.hub.run()
+
+	//http.Handle("/", proxy)
+	//http.HandleFunc("/ws", client.serveWs)
+
+	proxy.NonproxyHandler = http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		if req.URL.Path == "/ws" {
+			client.serveWs(w, req)
+			return
+		}
+
+		http.Error(w, "This is a proxy server. Does not respond to non-proxy requests.", 500)
+	})
 
 	if err := http.ListenAndServe(client.config.ListenerString, proxy); err != nil {
 		panic(err)

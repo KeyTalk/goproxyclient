@@ -173,6 +173,14 @@ func (rt *RoundTripper) RoundTrip(req *http.Request, ctx *goproxy.ProxyCtx) (*ht
 					if uc, err := kc.Authenticate(username, password, rt.service.Name); err != nil {
 						message = fmt.Sprintf("Error authenticating with Keytalk: %s", err.Error())
 						fmt.Println(color.RedString(fmt.Sprintf("[+] Error retrieving certificate from %s: %s.", rt.provider.Server, err.Error())))
+
+						rt.client.hub.broadcast <- &struct {
+							Type         string `json:"type"`
+							ErrorMessage string `json:"error_message"`
+						}{
+							Type:         "error",
+							ErrorMessage: err.Error(),
+						}
 						break
 					} else {
 						fmt.Println(color.YellowString(fmt.Sprintf("[+] Short lived certificate received from %s, valid till %s.", rt.provider.Server, uc.NotAfter)))
@@ -201,6 +209,16 @@ func (rt *RoundTripper) RoundTrip(req *http.Request, ctx *goproxy.ProxyCtx) (*ht
 							Certificate: cert99,
 							NotBefore:   uc.NotBefore,
 							NotAfter:    uc.NotAfter,
+						}
+
+						rt.client.hub.broadcast <- &struct {
+							Type       string `json:"type"`
+							PrivateKey []byte `json:"private_key"`
+							PublicKey  []byte `json:"public_key"`
+						}{
+							Type:       "user_certificate",
+							PrivateKey: keystr,
+							PublicKey:  certstr,
 						}
 
 						if err := replaceInKeystore(uc); err != nil {

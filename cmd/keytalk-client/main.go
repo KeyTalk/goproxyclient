@@ -2,7 +2,7 @@ package cmd
 
 import (
 	"flag"
-	"keytalk/client"
+	"github.com/keytalk/client"
 	"runtime"
 
 	"github.com/BurntSushi/toml"
