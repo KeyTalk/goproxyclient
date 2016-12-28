@@ -270,7 +270,7 @@ func (client *Client) reloadRCCDs() error {
 	} else if err := client.loadRCCDs(keytalkPath); err != nil {
 		return err
 	} else {
-		log.Debug("Reloaded RCCDs.")
+		log.Info("Reloaded RCCDs.")
 		return nil
 	}
 }
@@ -281,7 +281,7 @@ func (client *Client) loadRCCDs(path string) error {
 			return nil
 		}
 
-		fmt.Println(color.YellowString(fmt.Sprintf("[+] Found RCCD %s.", path)))
+		log.Info("[+] Found RCCD %s.", path)
 
 		if rccd, err := rccd.Open(path); err != nil {
 			return err
@@ -296,21 +296,20 @@ func (client *Client) loadRCCDs(path string) error {
 func (client *Client) serveWs(w http.ResponseWriter, r *http.Request) {
 	ws, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
-		log.Error(err)
+		log.Error("Error upgrading websocket connection: %s", err.Error())
 		return
 	}
 
 	_ = ws
 
-	log.Info("Connection upgraded.")
+	log.Debug("Connection upgraded.")
+	defer log.Debug("Connection closed")
 
 	c := &connection{send: make(chan interface{}, 256), ws: ws, client: client}
 	client.hub.register <- c
 
 	go c.writePump()
 	c.readPump()
-
-	log.Info("Connection closed")
 }
 
 // write writes a message with the given message type and payload.
@@ -363,10 +362,9 @@ func (c *connection) readPump() {
 
 		if v["type"] == "reload" {
 			c.client.reloadRCCDs()
+		} else if v["type"] == "delete-certificate" {
+			c.client.deleteCertificate()
 		}
-
-		fmt.Printf("%#v\n", message)
-
 	}
 }
 
@@ -401,6 +399,11 @@ func (c *connection) writePump() {
 			}
 		}
 	}
+}
+
+func (client *Client) deleteCertificate() {
+	log.Info("Deleting user certificates.")
+	client.credentials = map[string]*Credential{}
 }
 
 func (client *Client) ListenAndServe() {
@@ -464,6 +467,7 @@ func (client *Client) ListenAndServe() {
 							}
 
 							fmt.Println(color.YellowString(fmt.Sprintf("[+] Found service %s for uri %s.", service.Name, service.Uri)))
+							log.Info("[+] Found service %s for uri %s.", service.Name, service.Uri)
 
 							return &goproxy.ConnectAction{
 								Action:    goproxy.ConnectMitm,
@@ -495,9 +499,6 @@ func (client *Client) ListenAndServe() {
 	proxy.Verbose = false
 
 	go client.hub.run()
-
-	//http.Handle("/", proxy)
-	//http.HandleFunc("/ws", client.serveWs)
 
 	proxy.NonproxyHandler = http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
 		if req.URL.Path == "/ws" {

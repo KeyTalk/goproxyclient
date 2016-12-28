@@ -3,9 +3,7 @@
 // license that can be found in the LICENSE file.
 package client
 
-import (
-	"fmt"
-)
+import ()
 
 // hub maintains the set of active clients and broadcasts messages to the
 // clients.
@@ -43,9 +41,7 @@ func (h *Hub) run() {
 				close(client.send)
 			}
 		case message := <-h.broadcast:
-			fmt.Println("Got message")
 			for client := range h.clients {
-				fmt.Println("sending message to cliient con")
 				select {
 				case client.send <- message:
 				default:

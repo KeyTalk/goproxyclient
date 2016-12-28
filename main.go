@@ -113,7 +113,6 @@ level = "info"
 
 func run(c *cli.Context) {
 	// should we configure the proxy here?
-
 	var config client.Config
 	if _, err := toml.DecodeFile(configPath(c), &config); err != nil {
 		panic(err)
@@ -127,10 +126,11 @@ func run(c *cli.Context) {
 
 		switch log.Output {
 		case "stdout":
+			output = os.Stdout
 		case "stderr":
 			output = os.Stderr
 		default:
-			output, err = os.OpenFile(os.ExpandEnv(log.Output), os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0666)
+			output, err = os.OpenFile(os.ExpandEnv(log.Output), os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0660)
 		}
 
 		if err != nil {
@@ -146,12 +146,20 @@ func run(c *cli.Context) {
 		}
 
 		backendLeveled.SetLevel(level, "")
-		backendFormatter := logging.NewBackendFormatter(backendLeveled, format)
 
+		backendFormatter := logging.NewBackendFormatter(backendLeveled, format)
 		logBackends = append(logBackends, backendFormatter)
 	}
 
 	logging.SetBackend(logBackends...)
+
+	fmt.Println("[+] Keytalk client starting.")
+	log.Info("Keytalk client starting.")
+
+	defer func() {
+		fmt.Println("[+] Keytalk client stopped cleanly.")
+		log.Info("Keytalk client stopped cleanly.")
+	}()
 
 	client, err := client.New(&config)
 	if err != nil {
@@ -176,37 +184,41 @@ func run(c *cli.Context) {
 
 	client.ListenAndServe()
 
-	fmt.Println("[+] Keytalk client stopped cleanly.")
 }
 
 func bootstrap(c *cli.Context) {
 	if keytalkPath, err := client.KeytalkPath(); err != nil {
 		fmt.Println(color.RedString(fmt.Sprintf("[+] Could retrieve keytalk path: %s.", err.Error())))
 		return
+	} else if _, err := os.Stat(path.Join(keytalkPath, "config.toml")); !os.IsNotExist(err) {
 	} else {
 		if f, err := os.Create(path.Join(keytalkPath, "config.toml")); err != nil {
 			fmt.Println(color.RedString(fmt.Sprintf("[+] Could not create %s: %s.", keytalkPath, err.Error())))
+			log.Error("[+] Could not create configfile %s: %s.", keytalkPath, err.Error())
 			return
 		} else {
 			defer f.Close()
 
 			if _, err := io.Copy(f, strings.NewReader(ConfigFile)); err != nil {
 				fmt.Println(color.RedString(fmt.Sprintf("[+] Could not create configfile %s: %s.", keytalkPath, err.Error())))
+				log.Error("[+] Could not create configfile %s: %s.", keytalkPath, err.Error())
 				return
 			}
 		}
 
 		cabundlePath := path.Join(keytalkPath, "ca-bundle.pem")
 		if b, err := bindata.StaticCaBundlePemBytes(); err != nil {
+			log.Error("Could not write ca-bundle: %s", err.Error())
 		} else if err := ioutil.WriteFile(cabundlePath, b, 0644); err != nil {
+			log.Error("Could not write ca-bundle: %s", err.Error())
 		}
 
 		capath := path.Join(keytalkPath, "ca.pem")
 		if _, err := client.LoadCA(capath); err == nil {
-		} else if _, err := client.GenerateNewCA(capath); err == nil {
-		} else {
+		} else if _, err := client.GenerateNewCA(capath); err != nil {
 			fmt.Println(color.RedString(fmt.Sprintf("[+] Could not generate CA %s: %s.", keytalkPath, err.Error())))
 			log.Error("Error generating CA: %s", err.Error())
+		} else {
 		}
 	}
 }
