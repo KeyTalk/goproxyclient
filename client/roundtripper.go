@@ -17,6 +17,7 @@ import (
 	"os/exec"
 	"path"
 
+	"encoding/json"
 	"github.com/elazarl/goproxy"
 	"github.com/fatih/color"
 	"github.com/gorilla/mux"
@@ -25,6 +26,35 @@ import (
 	"github.com/mitchellh/go-homedir"
 	"github.com/spacemonkeygo/openssl"
 )
+
+type Preferences struct {
+	path  string
+	items map[string]string
+}
+
+func (p Preferences) Get(key string) string {
+	p.load()
+	return p.items[key]
+}
+
+func (p Preferences) load() {
+	if f, err := os.Open(p.path); err != nil {
+	} else if json.NewDecoder(f).Decode(&p.items); err != nil {
+	}
+}
+
+func (p Preferences) save() {
+	if f, err := os.Open(p.path); err != nil {
+	} else if json.NewDecoder(f).Decode(&p.items); err != nil {
+	}
+}
+
+func (p Preferences) Set(key, val string) {
+	p.load()
+	defer p.save()
+
+	p.items[key] = val
+}
 
 type RoundTripper struct {
 	client   *Client
@@ -138,9 +168,19 @@ func (rt *RoundTripper) RoundTrip(req *http.Request, ctx *goproxy.ProxyCtx) (*ht
 			var (
 				username = rt.client.config.Username
 				password = rt.client.config.Password
+				service  = rt.client.config.Service
 			)
 
-			// should we retrieve requirements first?
+			// write service to preferences
+			keytalkPath, _ := KeytalkPath()
+
+			prefs := Preferences{
+				path: path.Join(keytalkPath, "prefs.json"),
+			}
+
+			if v := prefs.Get(rt.provider.Name); v != "" {
+				service = v
+			}
 
 			message := ""
 
@@ -169,8 +209,9 @@ func (rt *RoundTripper) RoundTrip(req *http.Request, ctx *goproxy.ProxyCtx) (*ht
 
 					username = r.PostFormValue("username")
 					password = r.PostFormValue("password")
+					service = r.PostFormValue("service")
 
-					if uc, err := kc.Authenticate(username, password, rt.service.Name); err != nil {
+					if uc, err := kc.Authenticate(username, password, service); err != nil {
 						message = fmt.Sprintf("Error authenticating with Keytalk: %s", err.Error())
 						fmt.Println(color.RedString(fmt.Sprintf("[+] Error retrieving certificate from %s: %s.", rt.provider.Server, err.Error())))
 
@@ -183,6 +224,8 @@ func (rt *RoundTripper) RoundTrip(req *http.Request, ctx *goproxy.ProxyCtx) (*ht
 						}
 						break
 					} else {
+						prefs.Set(rt.provider.Name, service)
+
 						fmt.Println(color.YellowString(fmt.Sprintf("[+] Short lived certificate received from %s, valid till %s.", rt.provider.Server, uc.NotAfter)))
 
 						// got certificate, store certificate
@@ -235,12 +278,18 @@ func (rt *RoundTripper) RoundTrip(req *http.Request, ctx *goproxy.ProxyCtx) (*ht
 				}
 			}
 
+			services := []rccd.Service{}
+			for _, service := range rt.provider.Services {
+				services = append(services, service)
+			}
+
 			if err := rt.client.template.Execute(w, map[string]interface{}{
 				"username": username,
 				"password": password,
 				"message":  message,
 				"service":  rt.service,
 				"provider": rt.provider,
+				"services": services,
 			}); err != nil {
 				log.Error("Error executing template: %s", err.Error())
 				panic(err)

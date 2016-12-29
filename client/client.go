@@ -265,6 +265,7 @@ func (client *Client) TLSConfigFromCA(host string, ctx *goproxy.ProxyCtx) (*tls.
 }
 
 func (client *Client) reloadRCCDs() error {
+	client.rccds = []*rccd.RCCD{}
 	if keytalkPath, err := KeytalkPath(); err != nil {
 		return err
 	} else if err := client.loadRCCDs(keytalkPath); err != nil {
@@ -281,7 +282,7 @@ func (client *Client) loadRCCDs(path string) error {
 			return nil
 		}
 
-		log.Info("[+] Found RCCD %s.", path)
+		log.Infof("Found RCCD %s.", path)
 
 		if rccd, err := rccd.Open(path); err != nil {
 			return err
@@ -364,6 +365,20 @@ func (c *connection) readPump() {
 			c.client.reloadRCCDs()
 		} else if v["type"] == "delete-certificate" {
 			c.client.deleteCertificate()
+		} else if v["type"] == "retrieve-rccds" {
+			keytalkPath, _ := KeytalkPath()
+			rccds := []string{}
+			filepath.Walk(keytalkPath, func(path string, f os.FileInfo, err error) error {
+				if !glob.Glob("*.rccd", strings.ToLower(filepath.Base(path))) {
+					return nil
+				}
+
+				rccds = append(rccds, path)
+
+				return nil
+			})
+
+			c.send <- map[string]interface{}{"type": "receive-rccds", "items": rccds}
 		}
 	}
 }
@@ -467,7 +482,7 @@ func (client *Client) ListenAndServe() {
 							}
 
 							fmt.Println(color.YellowString(fmt.Sprintf("[+] Found service %s for uri %s.", service.Name, service.Uri)))
-							log.Info("[+] Found service %s for uri %s.", service.Name, service.Uri)
+							log.Infof("Found service %s for uri %s.", service.Name, service.Uri)
 
 							return &goproxy.ConnectAction{
 								Action:    goproxy.ConnectMitm,

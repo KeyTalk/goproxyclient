@@ -5,6 +5,7 @@ type Config struct {
 
 	Username string `toml:"username"`
 	Password string `toml:"password"`
+	Service  string `toml:"service"`
 
 	Logging []struct {
 		Output string `toml:"output"`

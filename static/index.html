@@ -9,7 +9,6 @@
     <img style='float:right; padding: 5px;' src="/logo.png" />
 
     <div class="modal-header">
-        <h1 class="text-center" id="myModalLabel">{{.service.Name}}</h1>
         <h2 class="text-center" id="myModalLabel">{{.provider.Name}}</h2>
     </div>
         <form method="post" action="/" >
@@ -19,6 +18,16 @@
         {{ .message }}
 	</div>
         {{ end }}
+            <div class="control-group">
+                <div class="controls">
+                    {{ $current := .service }}
+                    <select class="input-block-level" name="service">
+                    {{ range $service := .services }}
+                    <option value="{{$service.Name}}" {{ if eq $service.Name $current.Name }}selected{{end}} >{{$service.Name}}</option>
+                    {{ end }}
+                    </select>
+                </div>
+            </div>
             <div class="control-group">
                 <div class="controls">
                     <input class="input-block-level" id="inputEmail" type="text" placeholder="Username" name="username" value="{{.username}}">
