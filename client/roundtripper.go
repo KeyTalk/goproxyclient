@@ -175,7 +175,8 @@ func (rt *RoundTripper) RoundTrip(req *http.Request, ctx *goproxy.ProxyCtx) (*ht
 			keytalkPath, _ := KeytalkPath()
 
 			prefs := Preferences{
-				path: path.Join(keytalkPath, "prefs.json"),
+				path:  path.Join(keytalkPath, "prefs.json"),
+				items: map[string]string{},
 			}
 
 			if v := prefs.Get(rt.provider.Name); v != "" {
