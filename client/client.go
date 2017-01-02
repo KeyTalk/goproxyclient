@@ -160,11 +160,10 @@ func hashSortedBigInt(lst []string) *big.Int {
 	return rv
 }
 
-var goproxySignerVersion = ":goroxy1"
+var goproxySignerVersion = ":ktproxy"
 
 func signHost(ca tls.Certificate, hosts []string) (cert tls.Certificate, err error) {
 	var x509ca *x509.Certificate
-
 	// Use the provided ca and not the global GoproxyCa for certificate generation.
 	if x509ca, err = x509.ParseCertificate(ca.Certificate[0]); err != nil {
 		return
@@ -175,7 +174,6 @@ func signHost(ca tls.Certificate, hosts []string) (cert tls.Certificate, err err
 	end := start.Add(time.Hour * 24 * 365)
 
 	hash := hashSorted(append(hosts, goproxySignerVersion, ":"+runtime.Version()+":"+time.Now().Format("RFC3339")))
-	fmt.Println(append(hosts, goproxySignerVersion, ":"+runtime.Version()+":"+time.Now().Format("RFC3339")))
 	serial := new(big.Int)
 	serial.SetBytes(hash)
 
@@ -225,13 +223,12 @@ func stripPort(s string) string {
 	return s[:ix]
 }
 
-var defaultTLSConfig = &tls.Config{
-	InsecureSkipVerify: true,
-}
-
 func (client *Client) TLSConfigFromCA(host string, ctx *goproxy.ProxyCtx) (*tls.Config, error) {
-	config := defaultTLSConfig
-	ctx.Logf("signing for %s", stripPort(host))
+	var config = &tls.Config{
+		InsecureSkipVerify: false,
+	}
+
+	log.Debugf("Signing certificate for host %s", stripPort(host))
 
 	if cachePath, err := CachePath(); err != nil {
 		return nil, err
@@ -240,7 +237,7 @@ func (client *Client) TLSConfigFromCA(host string, ctx *goproxy.ProxyCtx) (*tls.
 
 		if data, err := ioutil.ReadFile(certPath); os.IsNotExist(err) {
 			if cert, err := signHost(*client.ca, []string{stripPort(host)}); err != nil {
-				ctx.Warnf("Cannot sign host certificate with provided CA: %s", err)
+				log.Errorf("Cannot sign host certificate with provided CA: %s.", err)
 				return nil, err
 			} else if f, err := os.OpenFile(certPath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0600); err != nil {
 				return nil, err
@@ -458,13 +455,15 @@ func (client *Client) ListenAndServe() {
 							credential: credential,
 						}
 					}
-
-					return req, nil
 				}
 			}
 		}
 
 		return req, nil
+	})
+
+	proxy.OnResponse().DoFunc(func(resp *http.Response, ctx *goproxy.ProxyCtx) *http.Response {
+		return resp
 	})
 
 	proxy.OnRequest().
@@ -492,21 +491,6 @@ func (client *Client) ListenAndServe() {
 					}
 				}
 			}
-			/*
-				tr := transport.Transport{Proxy: func(*http.Request) (*url.URL, error) {
-					return nil, nil
-				}}
-
-				ctx.RoundTripper = goproxy.RoundTripperFunc(func(req *http.Request, ctx *goproxy.ProxyCtx) (resp *http.Response, err error) {
-					ctx.UserData, resp, err = tr.DetailedRoundTrip(req)
-					return
-				})
-
-				return &goproxy.ConnectAction{
-					Action:    goproxy.ConnectAccept,
-					TLSConfig: client.TLSConfigFromCA,
-				}, host
-			*/
 
 			return goproxy.OkConnect, host
 		}))

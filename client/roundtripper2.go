@@ -107,7 +107,7 @@ func (rt *RoundTripper2) RoundTrip(req *http.Request, ctx *goproxy.ProxyCtx) (*h
 	}
 
 	if resp, err := transport.RoundTrip(req); err != nil {
-		log.Error(err.Error())
+		log.Errorf("Error roundtrip: %s: %s", req.URL.String(), err.Error())
 
 		fmt.Println(color.RedString(fmt.Sprintf("[+] Error roundtrip: %s", err.Error())))
 
@@ -130,6 +130,6 @@ func (rt *RoundTripper2) RoundTrip(req *http.Request, ctx *goproxy.ProxyCtx) (*h
 		return resp, nil
 
 	} else {
-		return resp, err
+		return resp, nil
 	}
 }

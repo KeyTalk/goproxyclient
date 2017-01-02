@@ -183,13 +183,15 @@ func (rt *RoundTripper) RoundTrip(req *http.Request, ctx *goproxy.ProxyCtx) (*ht
 				service = v
 			}
 
-			message := ""
+			defer r.Body.Close()
 
+			message := ""
 			if r.Method == "POST" {
 				for {
 					kc, err := keytalk.New(rt.rccd, fmt.Sprintf("https://%s", rt.provider.Server))
 					if err != nil {
 						message = fmt.Sprintf("Error initializing Keytalk client: %s", err.Error())
+						log.Errorf("Error initializing Keytalk client: %s", err.Error())
 						break
 					}
 
@@ -214,6 +216,7 @@ func (rt *RoundTripper) RoundTrip(req *http.Request, ctx *goproxy.ProxyCtx) (*ht
 
 					if uc, err := kc.Authenticate(username, password, service); err != nil {
 						message = fmt.Sprintf("Error authenticating with Keytalk: %s", err.Error())
+						log.Errorf("Error authenticating with Keytalk for: %s: %s", rt.provider.Server, err.Error())
 						fmt.Println(color.RedString(fmt.Sprintf("[+] Error retrieving certificate from %s: %s.", rt.provider.Server, err.Error())))
 
 						rt.client.hub.broadcast <- &struct {
@@ -228,6 +231,7 @@ func (rt *RoundTripper) RoundTrip(req *http.Request, ctx *goproxy.ProxyCtx) (*ht
 						prefs.Set(rt.provider.Name, service)
 
 						fmt.Println(color.YellowString(fmt.Sprintf("[+] Short lived certificate received from %s, valid till %s.", rt.provider.Server, uc.NotAfter)))
+						log.Infof("Short lived certificate received from %s, valid till %s.", rt.provider.Server, uc.NotAfter)
 
 						// got certificate, store certificate
 						cert2 := &pem.Block{Type: "CERTIFICATE", Bytes: uc.Raw}
@@ -235,7 +239,7 @@ func (rt *RoundTripper) RoundTrip(req *http.Request, ctx *goproxy.ProxyCtx) (*ht
 
 						cert99, err := openssl.LoadCertificateFromPEM(certstr)
 						if err != nil {
-							log.Error("Error creating openssl ctx: %s", err.Error())
+							log.Errorf("Error creating openssl ctx: %s", err.Error())
 							return
 						}
 
@@ -244,7 +248,7 @@ func (rt *RoundTripper) RoundTrip(req *http.Request, ctx *goproxy.ProxyCtx) (*ht
 
 						pk99, err := openssl.LoadPrivateKeyFromPEM(keystr)
 						if err != nil {
-							log.Error("Error creating openssl ctx: %s", err.Error())
+							log.Errorf("Error creating openssl ctx: %s", err.Error())
 							return
 						}
 
@@ -266,7 +270,7 @@ func (rt *RoundTripper) RoundTrip(req *http.Request, ctx *goproxy.ProxyCtx) (*ht
 						}
 
 						if err := replaceInKeystore(uc); err != nil {
-							log.Error("Could not load certificate in keychain: %s", err.Error())
+							log.Errorf("Could not load certificate in keychain: %s", err.Error())
 						}
 
 						w.Header().Set("Connection", "close")
@@ -292,7 +296,7 @@ func (rt *RoundTripper) RoundTrip(req *http.Request, ctx *goproxy.ProxyCtx) (*ht
 				"provider": rt.provider,
 				"services": services,
 			}); err != nil {
-				log.Error("Error executing template: %s", err.Error())
+				log.Errorf("Error executing template: %s", err.Error())
 				panic(err)
 			}
 		})
