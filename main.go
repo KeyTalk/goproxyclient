@@ -70,35 +70,6 @@ func init() {
 	flag.StringVar(&configFile, "config,c", "config.toml", "specifies the location of the config file")
 }
 
-const LaunchAgent = `<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0">
-<dict>
-    <key>Label</key>
-    <string>com.keytalk.client</string>
-    <key>ProgramArguments</key>
-    <array>
-        <string>{{ .Path }}</string>
-        <string>-c</string>
-        <string>{{ .Config }}</string>
-        <string>run</string>
-    </array>
-    <key>KeepAlive</key>
-    <false/>
-    <key>EnvironmentVariables</key>
-    <dict>
-    </dict>
-    <key>RunAtLoad</key>
-    <true/>
-    <key>WorkingDirectory</key>
-    <string>{{ .BasePath }}</string>
-    <key>StandardErrorPath</key>
-    <string>{{ .LogPath }}</string>
-    <key>StandardOutPath</key>
-    <string>{{ .LogPath }}</string>
-</dict>
-</plist>`
-
 const ConfigFile = `
 listen = "127.0.0.1:8080"
 
@@ -138,7 +109,8 @@ func run(c *cli.Context) {
 		}
 
 		backend := logging.NewLogBackend(output, "", 0)
-		backendLeveled := logging.AddModuleLevel(backend)
+		backendFormatter := logging.NewBackendFormatter(backend, format)
+		backendLeveled := logging.AddModuleLevel(backendFormatter)
 
 		level, err := logging.LogLevel(log.Level)
 		if err != nil {
@@ -147,19 +119,10 @@ func run(c *cli.Context) {
 
 		backendLeveled.SetLevel(level, "")
 
-		backendFormatter := logging.NewBackendFormatter(backendLeveled, format)
 		logBackends = append(logBackends, backendFormatter)
 	}
 
 	logging.SetBackend(logBackends...)
-
-	fmt.Println("[+] Keytalk client starting.")
-	log.Info("Keytalk client starting.")
-
-	defer func() {
-		fmt.Println("[+] Keytalk client stopped cleanly.")
-		log.Info("Keytalk client stopped cleanly.")
-	}()
 
 	client, err := client.New(&config)
 	if err != nil {

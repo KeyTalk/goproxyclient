@@ -17,6 +17,8 @@ type Credential struct {
 
 	NotBefore time.Time
 	NotAfter  time.Time
+
+	ServiceURIs []string
 }
 
 func (credential *Credential) Valid() error {

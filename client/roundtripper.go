@@ -17,7 +17,6 @@ import (
 	"os/exec"
 	"path"
 
-	"encoding/json"
 	"github.com/elazarl/goproxy"
 	"github.com/fatih/color"
 	"github.com/gorilla/mux"
@@ -25,36 +24,8 @@ import (
 	"github.com/keytalk/libkeytalk/rccd"
 	"github.com/mitchellh/go-homedir"
 	"github.com/spacemonkeygo/openssl"
+	"time"
 )
-
-type Preferences struct {
-	path  string
-	items map[string]string
-}
-
-func (p Preferences) Get(key string) string {
-	p.load()
-	return p.items[key]
-}
-
-func (p Preferences) load() {
-	if f, err := os.Open(p.path); err != nil {
-	} else if json.NewDecoder(f).Decode(&p.items); err != nil {
-	}
-}
-
-func (p Preferences) save() {
-	if f, err := os.Open(p.path); err != nil {
-	} else if json.NewDecoder(f).Decode(&p.items); err != nil {
-	}
-}
-
-func (p Preferences) Set(key, val string) {
-	p.load()
-	defer p.save()
-
-	p.items[key] = val
-}
 
 type RoundTripper struct {
 	client   *Client
@@ -97,9 +68,8 @@ func replaceInKeystore(uc *keytalk.UserCertificate) error {
 
 				cmd = exec.Command("/usr/bin/security", "delete-certificate", "-Z", fingerprint, loginKeychain)
 				if err := cmd.Run(); err != nil {
-					fmt.Println(fingerprint, err.Error())
+					log.Errorf("Error deleting certificate with fingerprint: %s: %s", fingerprint, err.Error())
 				}
-
 			}
 		}
 
@@ -214,7 +184,7 @@ func (rt *RoundTripper) RoundTrip(req *http.Request, ctx *goproxy.ProxyCtx) (*ht
 					password = r.PostFormValue("password")
 					service = r.PostFormValue("service")
 
-					if uc, err := kc.Authenticate(username, password, service); err != nil {
+					if result, err := kc.Authenticate(username, password, service); err != nil {
 						message = fmt.Sprintf("Error authenticating with Keytalk: %s", err.Error())
 						log.Errorf("Error authenticating with Keytalk for: %s: %s", rt.provider.Server, err.Error())
 						fmt.Println(color.RedString(fmt.Sprintf("[+] Error retrieving certificate from %s: %s.", rt.provider.Server, err.Error())))
@@ -228,13 +198,43 @@ func (rt *RoundTripper) RoundTrip(req *http.Request, ctx *goproxy.ProxyCtx) (*ht
 						}
 						break
 					} else {
+						defer kc.Close()
+
 						prefs.Set(rt.provider.Name, service)
 
-						fmt.Println(color.YellowString(fmt.Sprintf("[+] Short lived certificate received from %s, valid till %s.", rt.provider.Server, uc.NotAfter)))
-						log.Infof("Short lived certificate received from %s, valid till %s.", rt.provider.Server, uc.NotAfter)
+						opts := []keytalk.OptionFunc{}
+						if v := prefs.Get(fmt.Sprintf("%s-LAST_MESSAGES", rt.provider.Name)); v == "" {
+						} else if t, err := time.Parse(time.RFC3339, v); err != nil {
+							log.Errorf("Could not parse time: %s", err.Error())
+						} else {
+							opts = append(opts, keytalk.OptTime(t))
+						}
+
+						if messages, err := kc.LastMessages(opts...); err == nil {
+							for _, message := range messages {
+								if message.Text == "" {
+									continue
+								}
+
+								rt.client.hub.broadcast <- &struct {
+									Type string `json:"type"`
+									Text string `json:"text"`
+								}{
+									Type: "message",
+									Text: message.Text,
+								}
+							}
+
+							prefs.Set(fmt.Sprintf("%s-LAST_MESSAGES", rt.provider.Name), time.Now().Format(time.RFC3339))
+						} else {
+							log.Errorf("Messagse %#v", err)
+						}
+
+						fmt.Println(color.YellowString(fmt.Sprintf("[+] Short lived certificate received from %s, valid till %s.", rt.provider.Server, result.NotAfter)))
+						log.Infof("Short lived certificate received from %s, valid till %s.", rt.provider.Server, result.NotAfter)
 
 						// got certificate, store certificate
-						cert2 := &pem.Block{Type: "CERTIFICATE", Bytes: uc.Raw}
+						cert2 := &pem.Block{Type: "CERTIFICATE", Bytes: result.Raw}
 						certstr := pem.EncodeToMemory(cert2)
 
 						cert99, err := openssl.LoadCertificateFromPEM(certstr)
@@ -243,7 +243,7 @@ func (rt *RoundTripper) RoundTrip(req *http.Request, ctx *goproxy.ProxyCtx) (*ht
 							return
 						}
 
-						key := &pem.Block{Type: "RSA PRIVATE KEY", Bytes: x509.MarshalPKCS1PrivateKey(uc.PrivateKey().(*rsa.PrivateKey))}
+						key := &pem.Block{Type: "RSA PRIVATE KEY", Bytes: x509.MarshalPKCS1PrivateKey(result.PrivateKey().(*rsa.PrivateKey))}
 						keystr := pem.EncodeToMemory(key)
 
 						pk99, err := openssl.LoadPrivateKeyFromPEM(keystr)
@@ -255,8 +255,9 @@ func (rt *RoundTripper) RoundTrip(req *http.Request, ctx *goproxy.ProxyCtx) (*ht
 						rt.client.credentials[rt.provider.Name] = &Credential{
 							PrivateKey:  pk99,
 							Certificate: cert99,
-							NotBefore:   uc.NotBefore,
-							NotAfter:    uc.NotAfter,
+							ServiceURIs: result.ServiceURIs,
+							NotBefore:   result.NotBefore,
+							NotAfter:    result.NotAfter,
 						}
 
 						rt.client.hub.broadcast <- &struct {
@@ -269,12 +270,18 @@ func (rt *RoundTripper) RoundTrip(req *http.Request, ctx *goproxy.ProxyCtx) (*ht
 							PublicKey:  certstr,
 						}
 
-						if err := replaceInKeystore(uc); err != nil {
+						if err := replaceInKeystore(result.UserCertificate); err != nil {
 							log.Errorf("Could not load certificate in keychain: %s", err.Error())
 						}
 
 						w.Header().Set("Connection", "close")
-						w.Header().Set("Location", r.URL.String())
+
+						if len(result.ServiceURIs) > 0 {
+							log.Infof("Using service uri: %s", result.ServiceURIs[0])
+							w.Header().Set("Location", result.ServiceURIs[0])
+						} else {
+							w.Header().Set("Location", r.URL.String())
+						}
 						w.WriteHeader(http.StatusFound)
 						return
 					}

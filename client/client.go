@@ -36,6 +36,7 @@ import (
 	"encoding/json"
 	"github.com/elazarl/goproxy"
 	"github.com/gorilla/websocket"
+	"runtime/debug"
 )
 
 var log = logging.MustGetLogger("keytalk/client")
@@ -279,8 +280,7 @@ func (client *Client) loadRCCDs(path string) error {
 			return nil
 		}
 
-		log.Infof("Found RCCD %s.", path)
-
+		log.Infof("Loading RCCD %s.", path)
 		if rccd, err := rccd.Open(path); err != nil {
 			return err
 		} else {
@@ -419,9 +419,15 @@ func (client *Client) deleteCertificate() {
 }
 
 func (client *Client) ListenAndServe() {
-	fmt.Println(color.YellowString(fmt.Sprintf("[+] Keytalk client started.")))
+	log.Infof("Keytalk client started.")
+	defer log.Infof("Keytalk client stopped.")
 
-	defer fmt.Println(color.YellowString(fmt.Sprintf("[+] Keytalk client stopped.")))
+	defer func() {
+		if err := recover(); err != nil {
+			log.Criticalf("Panic: %s\nStacktrace:\n%s\n", err, string(debug.Stack()))
+			os.Exit(1)
+		}
+	}()
 
 	proxy := goproxy.NewProxyHttpServer()
 
@@ -450,10 +456,32 @@ func (client *Client) ListenAndServe() {
 							client:   client,
 						}
 					} else {
+						log.Infof("Found valid credential for %s.", req.Host)
+
 						ctx.RoundTripper = &RoundTripper2{
 							client:     client,
 							credential: credential,
 						}
+					}
+				}
+			}
+		}
+
+		for _, credential := range client.credentials {
+			for _, serviceURI := range credential.ServiceURIs {
+				if u, err := url.Parse(serviceURI); err != nil {
+					continue
+				} else if u.Host != req.Host {
+					continue
+				}
+
+				if err := credential.Valid(); err != nil {
+					log.Errorf("Could not find valid credentials for %s.", req.Host)
+				} else {
+					log.Infof("Found valid credential for %s.", req.Host)
+					ctx.RoundTripper = &RoundTripper2{
+						client:     client,
+						credential: credential,
 					}
 				}
 			}
@@ -480,7 +508,6 @@ func (client *Client) ListenAndServe() {
 								continue
 							}
 
-							fmt.Println(color.YellowString(fmt.Sprintf("[+] Found service %s for uri %s.", service.Name, service.Uri)))
 							log.Infof("Found service %s for uri %s.", service.Name, service.Uri)
 
 							return &goproxy.ConnectAction{
@@ -488,6 +515,23 @@ func (client *Client) ListenAndServe() {
 								TLSConfig: client.TLSConfigFromCA,
 							}, host
 						}
+					}
+				}
+
+				for k, credential := range client.credentials {
+					for _, serviceURI := range credential.ServiceURIs {
+						if u, err := url.Parse(serviceURI); err != nil {
+							continue
+						} else if u.Host != h {
+							continue
+						}
+
+						log.Infof("Found service %s for uri %s.", k, serviceURI)
+
+						return &goproxy.ConnectAction{
+							Action:    goproxy.ConnectMitm,
+							TLSConfig: client.TLSConfigFromCA,
+						}, host
 					}
 				}
 			}
