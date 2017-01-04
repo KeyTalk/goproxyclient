@@ -8,7 +8,7 @@ import (
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"encoding/pem"
-	"fmt"
+	"github.com/op/go-logging"
 	"html/template"
 	"io/ioutil"
 	"math/big"
@@ -24,14 +24,12 @@ import (
 	"strings"
 	"time"
 
-	"github.com/fatih/color"
-	"github.com/op/go-logging"
-
 	glob "github.com/ryanuber/go-glob"
 
 	"github.com/keytalk/client/bindata"
 	rccd "github.com/keytalk/libkeytalk/rccd"
 
+	"fmt"
 	"github.com/elazarl/goproxy"
 	"runtime/debug"
 )
@@ -42,7 +40,7 @@ type Client struct {
 	listener net.Listener
 
 	template *template.Template
-	rccds    []*rccd.RCCD
+	rccds    map[string]*rccd.RCCD
 
 	config *Config
 
@@ -52,6 +50,8 @@ type Client struct {
 	hub *Hub
 
 	credentials map[string]*Credential
+
+	Preferences Preferences
 }
 
 func KeytalkPath() (string, error) {
@@ -87,13 +87,24 @@ func CachePath() (string, error) {
 }
 
 func New(config *Config) (*Client, error) {
+	keytalkPath, _ := KeytalkPath()
+
+	preferences := Preferences{
+		path:  path.Join(keytalkPath, "prefs.json"),
+		items: map[string]interface{}{},
+	}
+
+	preferences.Load()
+
 	client := Client{
-		rccds:  []*rccd.RCCD{},
+		rccds:  map[string]*rccd.RCCD{},
 		config: config,
 
 		hub: newHub(),
 
 		credentials: map[string]*Credential{},
+
+		Preferences: preferences,
 	}
 
 	str := ""
@@ -116,7 +127,7 @@ func New(config *Config) (*Client, error) {
 	}
 
 	if keytalkPath, err := KeytalkPath(); err != nil {
-		fmt.Println(color.RedString(fmt.Sprintf("[+] Could retrieve keytalk path: %s.", err.Error())))
+		log.Errorf("Could retrieve keytalk path: %s.", err.Error())
 		return nil, err
 	} else if cert, err := LoadCA(path.Join(keytalkPath, "ca.pem")); err == nil {
 		client.ca = &cert
@@ -246,7 +257,7 @@ func (client *Client) TLSConfigFromCA(host string, ctx *goproxy.ProxyCtx) (*tls.
 }
 
 func (client *Client) reloadRCCDs() error {
-	client.rccds = []*rccd.RCCD{}
+	client.rccds = map[string]*rccd.RCCD{}
 	if keytalkPath, err := KeytalkPath(); err != nil {
 		return err
 	} else if err := client.loadRCCDs(keytalkPath); err != nil {
@@ -263,11 +274,17 @@ func (client *Client) loadRCCDs(path string) error {
 			return nil
 		}
 
-		log.Infof("Loading RCCD %s.", path)
 		if rccd, err := rccd.Open(path); err != nil {
+			log.Errorf("Error opening rccd: %s: %s", path, err.Error())
 			return err
 		} else {
-			client.rccds = append(client.rccds, rccd)
+			client.rccds[path] = rccd
+
+			for _, provider := range rccd.Providers {
+				for _, service := range provider.Services {
+					log.Infof("Found rccd %s with provider %s, service %s, uri %s.", path, provider.Name, service.Name, service.Uri)
+				}
+			}
 		}
 
 		return nil
@@ -277,7 +294,7 @@ func (client *Client) loadRCCDs(path string) error {
 func (client *Client) serveWs(w http.ResponseWriter, r *http.Request) {
 	ws, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
-		log.Error("Error upgrading websocket connection: %s", err.Error())
+		log.Errorf("Error upgrading websocket connection: %s", err.Error())
 		return
 	}
 
@@ -295,6 +312,7 @@ func (client *Client) serveWs(w http.ResponseWriter, r *http.Request) {
 
 func (client *Client) deleteCertificate() {
 	log.Info("Deleting user certificates.")
+
 	client.credentials = map[string]*Credential{}
 }
 
@@ -315,7 +333,17 @@ func (client *Client) ListenAndServe() {
 		for _, rccd := range client.rccds {
 			for _, provider := range rccd.Providers {
 				for _, service := range provider.Services {
-					if u, err := url.Parse(service.Uri); err != nil {
+					serviceURI := service.Uri
+
+					if v, ok := client.Preferences.Get(fmt.Sprintf("%s/%s/service-uris", provider.Name, service.Name)); !ok {
+					} else if serviceURIs, ok := v.([]string); ok {
+						serviceURI = serviceURIs[0]
+					} else if serviceURIs, ok := v.([]interface{}); ok {
+						serviceURI = serviceURIs[0].(string)
+					}
+
+					// check if there is an updated uri for provider/service in prefs
+					if u, err := url.Parse(serviceURI); err != nil {
 						continue
 					} else if u.Host != req.Host {
 						continue
@@ -347,26 +375,6 @@ func (client *Client) ListenAndServe() {
 			}
 		}
 
-		for _, credential := range client.credentials {
-			for _, serviceURI := range credential.ServiceURIs {
-				if u, err := url.Parse(serviceURI); err != nil {
-					continue
-				} else if u.Host != req.Host {
-					continue
-				}
-
-				if err := credential.Valid(); err != nil {
-					log.Errorf("Could not find valid credentials for %s.", req.Host)
-				} else {
-					log.Infof("Found valid credential for %s.", req.Host)
-					ctx.RoundTripper = &RoundTripper2{
-						client:     client,
-						credential: credential,
-					}
-				}
-			}
-		}
-
 		return req, nil
 	})
 
@@ -382,7 +390,16 @@ func (client *Client) ListenAndServe() {
 				for _, rccd := range client.rccds {
 					for _, provider := range rccd.Providers {
 						for _, service := range provider.Services {
-							if u, err := url.Parse(service.Uri); err != nil {
+							serviceURI := service.Uri
+
+							if v, ok := client.Preferences.Get(fmt.Sprintf("%s/%s/service-uris", provider.Name, service.Name)); !ok {
+							} else if serviceURIs, ok := v.([]string); ok {
+								serviceURI = serviceURIs[0]
+							} else if serviceURIs, ok := v.([]interface{}); ok {
+								serviceURI = serviceURIs[0].(string)
+							}
+
+							if u, err := url.Parse(serviceURI); err != nil {
 								continue
 							} else if u.Host != h {
 								continue
@@ -395,23 +412,6 @@ func (client *Client) ListenAndServe() {
 								TLSConfig: client.TLSConfigFromCA,
 							}, host
 						}
-					}
-				}
-
-				for k, credential := range client.credentials {
-					for _, serviceURI := range credential.ServiceURIs {
-						if u, err := url.Parse(serviceURI); err != nil {
-							continue
-						} else if u.Host != h {
-							continue
-						}
-
-						log.Infof("Found service %s for uri %s.", k, serviceURI)
-
-						return &goproxy.ConnectAction{
-							Action:    goproxy.ConnectMitm,
-							TLSConfig: client.TLSConfigFromCA,
-						}, host
 					}
 				}
 			}

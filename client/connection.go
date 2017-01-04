@@ -3,12 +3,9 @@ package client
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"github.com/gorilla/websocket"
-	"github.com/ryanuber/go-glob"
 	"net/http"
-	"os"
-	"path/filepath"
-	"strings"
 	"time"
 )
 
@@ -79,19 +76,33 @@ func (c *connection) readPump() {
 		} else if v["type"] == "delete-certificate" {
 			c.client.deleteCertificate()
 		} else if v["type"] == "retrieve-rccds" {
-			keytalkPath, _ := KeytalkPath()
 			rccds := []string{}
-			filepath.Walk(keytalkPath, func(path string, f os.FileInfo, err error) error {
-				if !glob.Glob("*.rccd", strings.ToLower(filepath.Base(path))) {
-					return nil
-				}
-
+			for path := range c.client.rccds {
 				rccds = append(rccds, path)
-
-				return nil
-			})
+			}
 
 			c.send <- map[string]interface{}{"type": "receive-rccds", "items": rccds}
+		} else if v["type"] == "retrieve-service-uris" {
+			log.Info("retrieving service uri's")
+			services := []string{}
+			for _, rccd := range c.client.rccds {
+				for _, provider := range rccd.Providers {
+					for _, service := range provider.Services {
+						serviceURI := service.Uri
+
+						if v, ok := c.client.Preferences.Get(fmt.Sprintf("%s/%s/service-uris", provider.Name, service.Name)); !ok {
+						} else if serviceURIs, ok := v.([]string); ok {
+							serviceURI = serviceURIs[0]
+						} else if serviceURIs, ok := v.([]interface{}); ok {
+							serviceURI = serviceURIs[0].(string)
+						}
+
+						services = append(services, serviceURI)
+					}
+				}
+			}
+
+			c.send <- map[string]interface{}{"type": "receive-service-uris", "services": services}
 		}
 	}
 }

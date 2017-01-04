@@ -3,47 +3,52 @@ package client
 import (
 	"encoding/json"
 	"os"
+	"sync"
 )
 
 type Preferences struct {
 	path  string
-	items map[string]string
+	items map[string]interface{}
+	m     sync.Mutex
 }
 
-func (p Preferences) Get(key string) string {
-	p.load()
-	return p.items[key]
+func (p Preferences) Get(key string) (interface{}, bool) {
+	p.m.Lock()
+	defer p.m.Unlock()
+
+	v, ok := p.items[key]
+	return v, ok
 }
 
-func (p Preferences) load() {
-	log.Debugf("Reading preferences from: %s", p.path)
+func (p Preferences) Load() {
+	p.m.Lock()
+	defer p.m.Unlock()
+
 	if f, err := os.Open(p.path); err != nil {
 		log.Errorf("Error reading preferences: %s", err)
 	} else if err := json.NewDecoder(f).Decode(&p.items); err != nil {
 		log.Errorf("Error reading preferences: %s", err)
 	} else {
 		defer f.Close()
-
-		log.Errorf("Prefs loaded %s %#v", p.path, p.items)
 	}
 }
 
-func (p Preferences) save() {
-	log.Debugf("Writing preferences to: %s", p.path)
+func (p Preferences) Sync() {
+	p.m.Lock()
+	defer p.m.Unlock()
+
 	if f, err := os.OpenFile(p.path, os.O_CREATE|os.O_WRONLY, 0600); err != nil {
 		log.Errorf("Error writing preferences: %s", err)
 	} else if err := json.NewEncoder(f).Encode(&p.items); err != nil {
 		log.Errorf("Error writing preferences: %s", err)
 	} else {
 		defer f.Close()
-
-		log.Errorf("Prefs written %s %#v", p.path, p.items)
 	}
 }
 
-func (p Preferences) Set(key, val string) {
-	p.load()
-	defer p.save()
+func (p Preferences) Set(key string, val interface{}) {
+	p.m.Lock()
+	defer p.m.Unlock()
 
 	p.items[key] = val
 }

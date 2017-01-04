@@ -24,7 +24,7 @@ import (
 var version = "0.1"
 
 var format = logging.MustStringFormatter(
-	"%{color}%{time:15:04:05.000} %{shortfunc} ▶ %{level:.4s} %{id:03x}%{color:reset} %{message}",
+	"%{color}%{time:2006-01-02 15:04:05.000} %{shortfunc} ▶ %{level:.4s} %{id:03x}%{color:reset} %{message}",
 )
 
 var log = logging.MustGetLogger("keytalk/client")
@@ -156,31 +156,28 @@ func bootstrap(c *cli.Context) {
 	} else if _, err := os.Stat(path.Join(keytalkPath, "config.toml")); !os.IsNotExist(err) {
 	} else {
 		if f, err := os.Create(path.Join(keytalkPath, "config.toml")); err != nil {
-			fmt.Println(color.RedString(fmt.Sprintf("[+] Could not create %s: %s.", keytalkPath, err.Error())))
-			log.Error("[+] Could not create configfile %s: %s.", keytalkPath, err.Error())
+			log.Errorf("Could not create configfile %s: %s.", keytalkPath, err.Error())
 			return
 		} else {
 			defer f.Close()
 
 			if _, err := io.Copy(f, strings.NewReader(ConfigFile)); err != nil {
-				fmt.Println(color.RedString(fmt.Sprintf("[+] Could not create configfile %s: %s.", keytalkPath, err.Error())))
-				log.Error("[+] Could not create configfile %s: %s.", keytalkPath, err.Error())
+				log.Errorf("Could not create configfile %s: %s.", keytalkPath, err.Error())
 				return
 			}
 		}
 
 		cabundlePath := path.Join(keytalkPath, "ca-bundle.pem")
 		if b, err := bindata.StaticCaBundlePemBytes(); err != nil {
-			log.Error("Could not write ca-bundle: %s", err.Error())
+			log.Errorf("Could not write ca-bundle: %s", err.Error())
 		} else if err := ioutil.WriteFile(cabundlePath, b, 0644); err != nil {
-			log.Error("Could not write ca-bundle: %s", err.Error())
+			log.Errorf("Could not write ca-bundle: %s", err.Error())
 		}
 
 		capath := path.Join(keytalkPath, "ca.pem")
 		if _, err := client.LoadCA(capath); err == nil {
 		} else if _, err := client.GenerateNewCA(capath); err != nil {
-			fmt.Println(color.RedString(fmt.Sprintf("[+] Could not generate CA %s: %s.", keytalkPath, err.Error())))
-			log.Error("Error generating CA: %s", err.Error())
+			log.Errorf("Error generating CA: %s", err.Error())
 		} else {
 		}
 	}

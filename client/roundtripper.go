@@ -141,16 +141,11 @@ func (rt *RoundTripper) RoundTrip(req *http.Request, ctx *goproxy.ProxyCtx) (*ht
 				service  = rt.client.config.Service
 			)
 
-			// write service to preferences
-			keytalkPath, _ := KeytalkPath()
+			prefs := rt.client.Preferences
+			defer prefs.Sync()
 
-			prefs := Preferences{
-				path:  path.Join(keytalkPath, "prefs.json"),
-				items: map[string]string{},
-			}
-
-			if v := prefs.Get(rt.provider.Name); v != "" {
-				service = v
+			if v, ok := prefs.Get(fmt.Sprintf("%s/default-service", rt.provider.Name)); ok {
+				service = v.(string)
 			}
 
 			defer r.Body.Close()
@@ -187,7 +182,6 @@ func (rt *RoundTripper) RoundTrip(req *http.Request, ctx *goproxy.ProxyCtx) (*ht
 					if result, err := kc.Authenticate(username, password, service); err != nil {
 						message = fmt.Sprintf("Error authenticating with Keytalk: %s", err.Error())
 						log.Errorf("Error authenticating with Keytalk for: %s: %s", rt.provider.Server, err.Error())
-						fmt.Println(color.RedString(fmt.Sprintf("[+] Error retrieving certificate from %s: %s.", rt.provider.Server, err.Error())))
 
 						rt.client.hub.broadcast <- &struct {
 							Type         string `json:"type"`
@@ -200,11 +194,11 @@ func (rt *RoundTripper) RoundTrip(req *http.Request, ctx *goproxy.ProxyCtx) (*ht
 					} else {
 						defer kc.Close()
 
-						prefs.Set(rt.provider.Name, service)
+						prefs.Set(fmt.Sprintf("%s/default-service", rt.provider.Name), service)
 
 						opts := []keytalk.OptionFunc{}
-						if v := prefs.Get(fmt.Sprintf("%s-LAST_MESSAGES", rt.provider.Name)); v == "" {
-						} else if t, err := time.Parse(time.RFC3339, v); err != nil {
+						if v, ok := prefs.Get(fmt.Sprintf("%s/last-messages", rt.provider.Name)); !ok {
+						} else if t, err := time.Parse(time.RFC3339, v.(string)); err != nil {
 							log.Errorf("Could not parse time: %s", err.Error())
 						} else {
 							opts = append(opts, keytalk.OptTime(t))
@@ -276,8 +270,10 @@ func (rt *RoundTripper) RoundTrip(req *http.Request, ctx *goproxy.ProxyCtx) (*ht
 
 						w.Header().Set("Connection", "close")
 
+						prefs.Set(fmt.Sprintf("%s/%s/service-uris", rt.provider.Name, service), result.ServiceURIs)
+
 						if len(result.ServiceURIs) > 0 {
-							log.Infof("Using service uri: %s", result.ServiceURIs[0])
+							log.Infof("Using service uri: %s for service: %s", result.ServiceURIs[0], service)
 							w.Header().Set("Location", result.ServiceURIs[0])
 						} else {
 							w.Header().Set("Location", r.URL.String())
