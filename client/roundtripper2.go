@@ -11,7 +11,6 @@ import (
 	"time"
 
 	"github.com/elazarl/goproxy"
-	"github.com/fatih/color"
 	"github.com/spacemonkeygo/openssl"
 )
 
@@ -84,7 +83,7 @@ func (rt *RoundTripper2) RoundTrip(req *http.Request, ctx *goproxy.ProxyCtx) (*h
 
 			ctx.SetVerifyMode(openssl.VerifyPeer)
 
-			conn, err := openssl.Dial(network, addr, ctx, openssl.InsecureSkipHostVerification)
+			conn, err := openssl.Dial(network, addr, ctx, 0)
 			if err != nil {
 				return nil, fmt.Errorf("Error dialing: %s", err.Error())
 			}
@@ -108,8 +107,6 @@ func (rt *RoundTripper2) RoundTrip(req *http.Request, ctx *goproxy.ProxyCtx) (*h
 
 	if resp, err := transport.RoundTrip(req); err != nil {
 		log.Errorf("Error roundtrip: %s: %s", req.URL.String(), err.Error())
-
-		fmt.Println(color.RedString(fmt.Sprintf("[+] Error roundtrip: %s", err.Error())))
 
 		r, w := io.Pipe()
 		resp := &http.Response{
