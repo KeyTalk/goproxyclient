@@ -37,12 +37,12 @@
             </div>
             <div class="control-group">
                 <div class="controls">
-                    <input class="input-block-level" id="inputEmail" type="text" placeholder="Username" name="username" value="{{.username}}">
+                    <input class="input-block-level" id="inputEmail" type="text" placeholder="Username" name="username" value="{{.username}}" {{if eq .username ""}}autofocus{{end}}>
                 </div>
             </div>
             <div class="control-group">
                 <div class="controls">
-                    <input class="input-block-level" id="password" type="password" placeholder="{{ .prompt }}" name="password" value="{{.password}}" autofocus>
+                    <input class="input-block-level" id="password" type="password" placeholder="{{ .prompt }}" name="password" value="{{.password}}" {{if ne .username ""}}autofocus{{end}}>
                 </div>
             </div>
     </div>

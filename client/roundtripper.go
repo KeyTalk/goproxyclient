@@ -138,6 +138,9 @@ func (rt *RoundTripper) RoundTrip(req *http.Request, ctx *goproxy.ProxyCtx) (*ht
 				username = rt.client.config.Username
 				password = rt.client.config.Password
 				service  = rt.client.config.Service
+				prompt   = ""
+				message  = ""
+				token    = ""
 			)
 
 			prefs := rt.client.Preferences
@@ -148,10 +151,6 @@ func (rt *RoundTripper) RoundTrip(req *http.Request, ctx *goproxy.ProxyCtx) (*ht
 			}
 
 			defer r.Body.Close()
-
-			prompt := ""
-			message := ""
-			token := ""
 
 			for {
 				kc, err := keytalk.New(rt.rccd, fmt.Sprintf("https://%s", rt.provider.Server))
@@ -182,7 +181,10 @@ func (rt *RoundTripper) RoundTrip(req *http.Request, ctx *goproxy.ProxyCtx) (*ht
 					Jar: jar,
 				}
 
-				service = r.FormValue("service")
+				if service == "" {
+					service = r.FormValue("service")
+				}
+
 				if service == "" {
 					service = rt.provider.Services[0].Name
 				}
@@ -201,17 +203,17 @@ func (rt *RoundTripper) RoundTrip(req *http.Request, ctx *goproxy.ProxyCtx) (*ht
 						break
 					}
 
-					if requirements, err := kc.Requirements(service); err != nil {
-						message = fmt.Sprintf("Error retrieving requirements for service: %s: %s", service, err.Error())
-						log.Errorf("Error retrieving requirements for service: %s: %s", service, err.Error())
-						break
-					} else {
-						prompt = requirements.Prompt
-					}
-
 					token = kc.Token()
 				} else {
 					kc.SetToken(token)
+				}
+
+				if requirements, err := kc.Requirements(service); err != nil {
+					message = fmt.Sprintf("Error retrieving requirements for service: %s: %s", service, err.Error())
+					log.Errorf("Error retrieving requirements for service: %s: %s", service, err.Error())
+					break
+				} else {
+					prompt = requirements.Prompt
 				}
 
 				if v := r.FormValue("username"); v != "" {
@@ -219,9 +221,9 @@ func (rt *RoundTripper) RoundTrip(req *http.Request, ctx *goproxy.ProxyCtx) (*ht
 				}
 
 				if r.Method == "POST" {
-					password = r.PostFormValue("password")
+					prefs.Set(fmt.Sprintf("%s/default-service", rt.provider.Name), service)
 
-					if result, err := kc.Authenticate(username, password, service); err != nil {
+					if result, err := kc.Authenticate(username, r.PostFormValue("password"), service); err != nil {
 						message = fmt.Sprintf("Error authenticating with Keytalk: %s", err.Error())
 						log.Errorf("Error authenticating with Keytalk for: %s: %s", rt.provider.Server, err.Error())
 
@@ -240,8 +242,6 @@ func (rt *RoundTripper) RoundTrip(req *http.Request, ctx *goproxy.ProxyCtx) (*ht
 					} else {
 						// finally close connection
 						defer kc.Close()
-
-						prefs.Set(fmt.Sprintf("%s/default-service", rt.provider.Name), service)
 
 						opts := []keytalk.OptionFunc{}
 						if v, ok := prefs.Get(fmt.Sprintf("%s/last-messages", rt.provider.Name)); !ok {
