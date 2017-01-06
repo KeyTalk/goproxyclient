@@ -30,6 +30,11 @@ func newHub() *Hub {
 	}
 }
 
+func (h *Hub) Broadcast(msg interface{}) error {
+	h.broadcast <- msg
+	return nil
+}
+
 func (h *Hub) run() {
 	for {
 		select {

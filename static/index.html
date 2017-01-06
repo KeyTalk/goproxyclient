@@ -4,6 +4,11 @@
 <link href="//netdna.bootstrapcdn.com/twitter-bootstrap/2.3.2/css/bootstrap-combined.min.css" rel="stylesheet">
 </head>
 <body>
+<script>
+ function changeService() {
+     location.href = "?service=" + event.currentTarget.value;
+ }
+</script>
 
 <div tabindex="-1" class="modal show" id="myModal" aria-hidden="true">
     <img style='float:right; padding: 5px;' src="/logo.png" />
@@ -12,18 +17,20 @@
         <h2 class="text-center" id="myModalLabel">{{.provider.Name}}</h2>
     </div>
         <form method="post" action="/" >
+            <input type="hidden" name="token" value="{{ .token }}" />
     <div class="modal-body">
         {{ if .message }} 
         <div class="alert alert-danger" role="alert">
         {{ .message }}
 	</div>
         {{ end }}
+            <input type="hidden" name="url" value="{{ .url }}" />
             <div class="control-group">
                 <div class="controls">
                     {{ $current := .service }}
-                    <select class="input-block-level" name="service">
+                    <select class="input-block-level" name="service" onChange="javascript:changeService(this);">
                     {{ range $service := .services }}
-                    <option value="{{$service.Name}}" {{ if eq $service.Name $current.Name }}selected{{end}} >{{$service.Name}}</option>
+                    <option value="{{$service.Name}}" {{ if eq $service.Name $current }}selected{{end}} >{{$service.Name}}</option>
                     {{ end }}
                     </select>
                 </div>
@@ -35,7 +42,7 @@
             </div>
             <div class="control-group">
                 <div class="controls">
-                    <input class="input-block-level" id="password" type="password" placeholder="Password" name="password" value="{{.password}}">
+                    <input class="input-block-level" id="password" type="password" placeholder="{{ .prompt }}" name="password" value="{{.password}}" autofocus>
                 </div>
             </div>
     </div>

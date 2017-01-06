@@ -24,7 +24,7 @@ import (
 var version = "0.1"
 
 var format = logging.MustStringFormatter(
-	"%{color}%{time:2006-01-02 15:04:05.000} %{shortfunc} ▶ %{level:.4s} %{id:03x}%{color:reset} %{message}",
+	"%{time:2006-01-02 15:04:05.000} %{shortfunc} ▶ %{level:.4s} %{id:03x} %{message}",
 )
 
 var log = logging.MustGetLogger("keytalk/client")
@@ -146,7 +146,6 @@ func run(c *cli.Context) {
 	}()
 
 	client.ListenAndServe()
-
 }
 
 func bootstrap(c *cli.Context) {

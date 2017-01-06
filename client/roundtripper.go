@@ -18,7 +18,6 @@ import (
 	"path"
 
 	"github.com/elazarl/goproxy"
-	"github.com/fatih/color"
 	"github.com/gorilla/mux"
 	keytalk "github.com/keytalk/libkeytalk/client"
 	"github.com/keytalk/libkeytalk/rccd"
@@ -129,7 +128,7 @@ func (rt *RoundTripper) RoundTrip(req *http.Request, ctx *goproxy.ProxyCtx) (*ht
 		var router = mux.NewRouter()
 		router.PathPrefix("/logo.png").HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			w.Header().Add("Content-Type", "image/png")
-			w.WriteHeader(200)
+			w.WriteHeader(http.StatusOK)
 
 			w.Write(rt.rccd.Logo)
 		})
@@ -150,48 +149,96 @@ func (rt *RoundTripper) RoundTrip(req *http.Request, ctx *goproxy.ProxyCtx) (*ht
 
 			defer r.Body.Close()
 
+			prompt := ""
 			message := ""
-			if r.Method == "POST" {
-				for {
-					kc, err := keytalk.New(rt.rccd, fmt.Sprintf("https://%s", rt.provider.Server))
-					if err != nil {
+			token := ""
+
+			for {
+				kc, err := keytalk.New(rt.rccd, fmt.Sprintf("https://%s", rt.provider.Server))
+				if err != nil {
+					message = fmt.Sprintf("Error initializing Keytalk client: %s", err.Error())
+					log.Errorf("Error initializing Keytalk client: %s", err.Error())
+					break
+				}
+
+				jar, _ := cookiejar.New(nil)
+
+				RootCAs := x509.NewCertPool()
+				RootCAs.AddCert(rt.rccd.SCA)
+				RootCAs.AddCert(rt.rccd.UCA)
+				RootCAs.AddCert(rt.rccd.PCA)
+
+				kc.Client = &http.Client{
+					Transport: &http.Transport{
+						TLSClientConfig: &tls.Config{
+							InsecureSkipVerify: false,
+							RootCAs:            RootCAs,
+						},
+						Proxy: func(*http.Request) (*url.URL, error) {
+							// we explicitly don't use an proxy
+							return nil, nil
+						},
+					},
+					Jar: jar,
+				}
+
+				service = r.FormValue("service")
+				if service == "" {
+					service = rt.provider.Services[0].Name
+				}
+
+				token = r.FormValue("token")
+				if token == "" {
+					if err := kc.Hello(); err != nil {
 						message = fmt.Sprintf("Error initializing Keytalk client: %s", err.Error())
 						log.Errorf("Error initializing Keytalk client: %s", err.Error())
 						break
 					}
 
-					jar, _ := cookiejar.New(nil)
-
-					kc.Client = &http.Client{
-						Transport: &http.Transport{
-							TLSClientConfig: &tls.Config{
-								InsecureSkipVerify: true,
-							},
-							Proxy: func(*http.Request) (*url.URL, error) {
-								// we explicitly don't use an proxy
-								return nil, nil
-							},
-						},
-						Jar: jar,
+					if err := kc.Handshake(); err != nil {
+						message = fmt.Sprintf("Error initializing Keytalk client: %s", err.Error())
+						log.Errorf("Error initializing Keytalk client: %s", err.Error())
+						break
 					}
 
-					username = r.PostFormValue("username")
+					if requirements, err := kc.Requirements(service); err != nil {
+						message = fmt.Sprintf("Error retrieving requirements for service: %s: %s", service, err.Error())
+						log.Errorf("Error retrieving requirements for service: %s: %s", service, err.Error())
+						break
+					} else {
+						prompt = requirements.Prompt
+					}
+
+					token = kc.Token()
+				} else {
+					kc.SetToken(token)
+				}
+
+				if v := r.FormValue("username"); v != "" {
+					username = r.FormValue("username")
+				}
+
+				if r.Method == "POST" {
 					password = r.PostFormValue("password")
-					service = r.PostFormValue("service")
 
 					if result, err := kc.Authenticate(username, password, service); err != nil {
 						message = fmt.Sprintf("Error authenticating with Keytalk: %s", err.Error())
 						log.Errorf("Error authenticating with Keytalk for: %s: %s", rt.provider.Server, err.Error())
 
-						rt.client.hub.broadcast <- &struct {
+						rt.client.hub.Broadcast(&struct {
 							Type         string `json:"type"`
 							ErrorMessage string `json:"error_message"`
 						}{
 							Type:         "error",
 							ErrorMessage: err.Error(),
-						}
+						})
+
 						break
+					} else if len(result.Challenges) > 0 {
+						prompt = result.Challenges[0].Value
+						password = ""
 					} else {
+						// finally close connection
 						defer kc.Close()
 
 						prefs.Set(fmt.Sprintf("%s/default-service", rt.provider.Name), service)
@@ -210,21 +257,20 @@ func (rt *RoundTripper) RoundTrip(req *http.Request, ctx *goproxy.ProxyCtx) (*ht
 									continue
 								}
 
-								rt.client.hub.broadcast <- &struct {
+								rt.client.hub.Broadcast(&struct {
 									Type string `json:"type"`
 									Text string `json:"text"`
 								}{
 									Type: "message",
 									Text: message.Text,
-								}
+								})
 							}
 
-							prefs.Set(fmt.Sprintf("%s-LAST_MESSAGES", rt.provider.Name), time.Now().Format(time.RFC3339))
+							prefs.Set(fmt.Sprintf("%s/last-messages", rt.provider.Name), time.Now().Format(time.RFC3339))
 						} else {
-							log.Errorf("Messagse %#v", err)
+							log.Errorf("Error retrieving messages: %s", err)
 						}
 
-						fmt.Println(color.YellowString(fmt.Sprintf("[+] Short lived certificate received from %s, valid till %s.", rt.provider.Server, result.NotAfter)))
 						log.Infof("Short lived certificate received from %s, valid till %s.", rt.provider.Server, result.NotAfter)
 
 						// got certificate, store certificate
@@ -254,15 +300,19 @@ func (rt *RoundTripper) RoundTrip(req *http.Request, ctx *goproxy.ProxyCtx) (*ht
 							NotAfter:    result.NotAfter,
 						}
 
-						rt.client.hub.broadcast <- &struct {
+						rt.client.hub.Broadcast(&struct {
 							Type       string `json:"type"`
+							Provider   string `json:"provider"`
+							Service    string `json:"service"`
 							PrivateKey []byte `json:"private_key"`
 							PublicKey  []byte `json:"public_key"`
 						}{
 							Type:       "user_certificate",
+							Provider:   rt.provider.Name,
+							Service:    service,
 							PrivateKey: keystr,
 							PublicKey:  certstr,
-						}
+						})
 
 						if err := replaceInKeystore(result.UserCertificate); err != nil {
 							log.Errorf("Could not load certificate in keychain: %s", err.Error())
@@ -278,12 +328,12 @@ func (rt *RoundTripper) RoundTrip(req *http.Request, ctx *goproxy.ProxyCtx) (*ht
 						} else {
 							w.Header().Set("Location", r.URL.String())
 						}
+
 						w.WriteHeader(http.StatusFound)
 						return
 					}
-
-					break
 				}
+				break
 			}
 
 			services := []rccd.Service{}
@@ -294,13 +344,15 @@ func (rt *RoundTripper) RoundTrip(req *http.Request, ctx *goproxy.ProxyCtx) (*ht
 			if err := rt.client.template.Execute(w, map[string]interface{}{
 				"username": username,
 				"password": password,
+				"token":    token,
+				"prompt":   prompt,
 				"message":  message,
-				"service":  rt.service,
+				"service":  service,
 				"provider": rt.provider,
 				"services": services,
 			}); err != nil {
 				log.Errorf("Error executing template: %s", err.Error())
-				panic(err)
+				return
 			}
 		})
 

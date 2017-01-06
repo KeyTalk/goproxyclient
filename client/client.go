@@ -276,7 +276,16 @@ func (client *Client) loadRCCDs(path string) error {
 
 		if rccd, err := rccd.Open(path); err != nil {
 			log.Errorf("Error opening rccd: %s: %s", path, err.Error())
-			return err
+
+			client.hub.Broadcast(&struct {
+				Type         string `json:"type"`
+				ErrorMessage string `json:"error_message"`
+			}{
+				Type:         "error",
+				ErrorMessage: err.Error(),
+			})
+
+			return nil
 		} else {
 			client.rccds[path] = rccd
 
@@ -349,20 +358,15 @@ func (client *Client) ListenAndServe() {
 						continue
 					}
 
+					ctx.RoundTripper = &RoundTripper{
+						rccd:     rccd,
+						provider: &provider,
+						service:  &service,
+						client:   client,
+					}
+
 					if credential, ok := client.credentials[provider.Name]; !ok {
-						ctx.RoundTripper = &RoundTripper{
-							rccd:     rccd,
-							provider: &provider,
-							service:  &service,
-							client:   client,
-						}
 					} else if err := credential.Valid(); err != nil {
-						ctx.RoundTripper = &RoundTripper{
-							rccd:     rccd,
-							provider: &provider,
-							service:  &service,
-							client:   client,
-						}
 					} else {
 						log.Infof("Found valid credential for %s.", req.Host)
 
@@ -370,6 +374,9 @@ func (client *Client) ListenAndServe() {
 							client:     client,
 							credential: credential,
 						}
+
+						// return immediately because we have found valid credentials
+						return req, nil
 					}
 				}
 			}

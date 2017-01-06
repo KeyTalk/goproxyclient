@@ -61,13 +61,13 @@ func (c *connection) readPump() {
 		_, message, err := c.ws.ReadMessage()
 		if err == nil {
 		} else if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway) {
-			log.Errorf("error: %v", err)
+			log.Errorf("Connection closed unexpectedly: %s", err)
 			continue
 		}
 
 		v := map[string]interface{}{}
 		if err := json.NewDecoder(bytes.NewBuffer(message)).Decode(&v); err != nil {
-			log.Error("error: %v", err)
+			log.Errorf("Error decoding message: %s", err)
 			continue
 		}
 
@@ -83,7 +83,6 @@ func (c *connection) readPump() {
 
 			c.send <- map[string]interface{}{"type": "receive-rccds", "items": rccds}
 		} else if v["type"] == "retrieve-service-uris" {
-			log.Info("retrieving service uri's")
 			services := []string{}
 			for _, rccd := range c.client.rccds {
 				for _, provider := range rccd.Providers {
