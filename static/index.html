@@ -1,7 +1,35 @@
 <html>
 <head>
 
-<link href="//netdna.bootstrapcdn.com/twitter-bootstrap/2.3.2/css/bootstrap-combined.min.css" rel="stylesheet">
+<link href="https://netdna.bootstrapcdn.com/twitter-bootstrap/2.3.2/css/bootstrap-combined.min.css" rel="stylesheet">
+<style>
+body {
+    font-size: 16px !important;
+    color: #5a5a5a;
+}
+
+.modal {
+    width: 274px;
+    padding: 40px 40px;
+    margin-left: -177px;
+}
+
+.modal-body {
+    padding: 0 15px;
+}
+
+.alert {
+    padding: 8px 14px 8px 14px;
+}
+
+.modal-footer {
+    padding: 0 15px 0;
+}
+
+select, input {
+    font-size: 16px !important;
+}
+</style>
 </head>
 <body>
 <script>
@@ -10,11 +38,10 @@
  }
 </script>
 
-<div tabindex="-1" class="modal show" id="myModal" aria-hidden="true">
-    <img style='float:right; padding: 5px;' src="/logo.png" />
+<div tabindex="-1" class="modal show" id="myModal" aria-hidden="true" style="border: 1px solid rgba(199, 199, 199, 0.3);">
+    <img style='margin-left: auto; margin-right: auto; width: 110px; display: block; padding: 5px;' src="/logo.png" />
 
-    <div class="modal-header">
-        <h2 class="text-center" id="myModalLabel">{{.provider.Name}}</h2>
+    <div class="modal-header" style="border: none;">
     </div>
         <form method="post" action="/" >
             <input type="hidden" name="token" value="{{ .token }}" />
@@ -27,8 +54,13 @@
             <input type="hidden" name="url" value="{{ .url }}" />
             <div class="control-group">
                 <div class="controls">
+                    <span>Login to {{.provider.Name}}</h2>
+                </div>
+            </div>
+            <div class="control-group">
+                <div class="controls">
                     {{ $current := .service }}
-                    <select class="input-block-level" name="service" onChange="javascript:changeService(this);">
+                    <select class="input-block-level" style="display: inline-block;" name="service" onChange="javascript:changeService(this);">
                     {{ range $service := .services }}
                     <option value="{{$service.Name}}" {{ if eq $service.Name $current }}selected{{end}} >{{$service.Name}}</option>
                     {{ end }}
@@ -37,19 +69,19 @@
             </div>
             <div class="control-group">
                 <div class="controls">
-                    <input class="input-block-level" id="inputEmail" type="text" placeholder="Username" name="username" value="{{.username}}" {{if eq .username ""}}autofocus{{end}}>
+                    <input class="input-block-level" id="inputEmail" type="text" placeholder="Username" name="username" value="{{.username}}" {{if eq .username ""}}autofocus{{end}} />
                 </div>
             </div>
             <div class="control-group">
                 <div class="controls">
-                    <input class="input-block-level" id="password" type="password" placeholder="{{ .prompt }}" name="password" value="{{.password}}" {{if ne .username ""}}autofocus{{end}}>
+                    <input class="input-block-level" id="password" type="password" placeholder="{{ .prompt }}" name="password" value="{{.password}}" {{if ne .username ""}}autofocus{{end}} />
                 </div>
             </div>
     </div>
-    <div class="modal-footer">
-        <button class="btn btnExtra btn-large btn-primary" type="submit">Login</button>
+    <div class="modal-footer" style="background: none; border-top: none;">
+        <button class="btn btnExtra btn-large btn-primary input-block-level" type="submit">Login</button>
     </div>
-        </form>
+    </form>
 </div>
 </body>
 </html>
