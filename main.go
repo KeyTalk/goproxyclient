@@ -33,7 +33,7 @@ var globalFlags = []cli.Flag{
 	cli.StringFlag{
 		Name:  "c,config",
 		Usage: "config file",
-		Value: "~/Library/Keytalk/config.toml",
+		Value: "~/Library/KeyTalk/config.toml",
 	},
 	cli.BoolFlag{
 		Name:  "help, h",
@@ -201,9 +201,9 @@ func main() {
 	// Set up app.
 	app := cli.NewApp()
 	app.Name = "keytalk"
-	app.Author = "keytalk.com"
-	app.Usage = "usage here"
-	app.Description = `Keytalk client`
+	app.Author = "KeyTalk"
+	app.Usage = ""
+	app.Description = `KeyTalk client`
 	app.Flags = globalFlags
 	app.CustomAppHelpTemplate = helpTemplate
 	app.Commands = []cli.Command{

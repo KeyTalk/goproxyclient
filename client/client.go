@@ -58,7 +58,7 @@ func KeytalkPath() (string, error) {
 	if usr, err := user.Current(); err != nil {
 		return "", err
 	} else {
-		keytalkPath := path.Join(usr.HomeDir, "Library", "Keytalk")
+		keytalkPath := path.Join(usr.HomeDir, "Library", "KeyTalk")
 		if _, err := os.Stat(keytalkPath); err == nil {
 		} else if !os.IsNotExist(err) {
 			return "", err
@@ -177,7 +177,7 @@ func signHost(ca tls.Certificate, hosts []string) (cert tls.Certificate, err err
 		SerialNumber: serial,
 		Issuer:       x509ca.Subject,
 		Subject: pkix.Name{
-			Organization: []string{"Keytalk Client Certificate"},
+			Organization: []string{"KeyTalk Client Certificate"},
 		},
 		NotBefore: start,
 		NotAfter:  end,
@@ -326,8 +326,8 @@ func (client *Client) deleteCertificate() {
 }
 
 func (client *Client) ListenAndServe() {
-	log.Infof("Keytalk client started.")
-	defer log.Infof("Keytalk client stopped.")
+	log.Infof("KeyTalk client started.")
+	defer log.Infof("KeyTalk client stopped.")
 
 	defer func() {
 		if err := recover(); err != nil {

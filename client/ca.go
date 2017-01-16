@@ -38,7 +38,7 @@ func GenerateNewCA(capath string) (tls.Certificate, error) {
 
 	template := x509.Certificate{
 		Subject: pkix.Name{
-			Organization: []string{"Keytalk Client CA"},
+			Organization: []string{"KeyTalk Client CA"},
 		},
 
 		NotBefore: notBefore,

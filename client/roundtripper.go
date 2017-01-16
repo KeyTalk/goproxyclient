@@ -155,8 +155,8 @@ func (rt *RoundTripper) RoundTrip(req *http.Request, ctx *goproxy.ProxyCtx) (*ht
 			for {
 				kc, err := keytalk.New(rt.rccd, fmt.Sprintf("https://%s", rt.provider.Server))
 				if err != nil {
-					message = fmt.Sprintf("Error initializing Keytalk client: %s", err.Error())
-					log.Errorf("Error initializing Keytalk client: %s", err.Error())
+					message = fmt.Sprintf("Error initializing KeyTalk client: %s", err.Error())
+					log.Errorf("Error initializing KeyTalk client: %s", err.Error())
 					break
 				}
 
@@ -192,14 +192,14 @@ func (rt *RoundTripper) RoundTrip(req *http.Request, ctx *goproxy.ProxyCtx) (*ht
 				token = r.FormValue("token")
 				if token == "" {
 					if err := kc.Hello(); err != nil {
-						message = fmt.Sprintf("Error initializing Keytalk client: %s", err.Error())
-						log.Errorf("Error initializing Keytalk client: %s", err.Error())
+						message = fmt.Sprintf("Error initializing KeyTalk client: %s", err.Error())
+						log.Errorf("Error initializing KeyTalk client: %s", err.Error())
 						break
 					}
 
 					if err := kc.Handshake(); err != nil {
-						message = fmt.Sprintf("Error initializing Keytalk client: %s", err.Error())
-						log.Errorf("Error initializing Keytalk client: %s", err.Error())
+						message = fmt.Sprintf("Error initializing KeyTalk client: %s", err.Error())
+						log.Errorf("Error initializing KeyTalk client: %s", err.Error())
 						break
 					}
 
@@ -224,8 +224,8 @@ func (rt *RoundTripper) RoundTrip(req *http.Request, ctx *goproxy.ProxyCtx) (*ht
 					prefs.Set(fmt.Sprintf("%s/default-service", rt.provider.Name), service)
 
 					if result, err := kc.Authenticate(username, r.PostFormValue("password"), service); err != nil {
-						message = fmt.Sprintf("Error authenticating with Keytalk: %s", err.Error())
-						log.Errorf("Error authenticating with Keytalk for: %s: %s", rt.provider.Server, err.Error())
+						message = fmt.Sprintf("Error authenticating with KeyTalk: %s", err.Error())
+						log.Errorf("Error authenticating with KeyTalk for: %s: %s", rt.provider.Server, err.Error())
 
 						rt.client.hub.Broadcast(&struct {
 							Type         string `json:"type"`
