@@ -3,14 +3,17 @@
 	"ignore": "test",
 	"package": [
 		{
-			"path": "Users/remco/Projects/keytalk/keytalk-sdk/libkeytalk",
-			"revision": ""
-		},
-		{
 			"checksumSHA1": "hqDDDpue/5363luidNMBS8z8eJU=",
 			"path": "github.com/BurntSushi/toml",
 			"revision": "99064174e013895bbd9b025c31100bd1d9b590ca",
 			"revisionTime": "2016-07-17T15:07:09Z"
+		},
+		{
+			"checksumSHA1": "5GteL7eGJO38/iDErl49LhhaELs=",
+			"path": "github.com/KeyTalk/keytalk-go",
+			"revision": "683835aeb3f0396a95c6315acf04dff5b0133815",
+			"revisionTime": "2017-01-31T17:02:52Z",
+			"tree": true
 		},
 		{
 			"checksumSHA1": "86jNufeBdE216SNojNeVYj4tCxw=",
@@ -133,5 +136,5 @@
 			"revisionTime": "2016-11-08T14:26:43Z"
 		}
 	],
-	"rootPath": "github.com/keytalk/client"
+	"rootPath": "github.com/KeyTalk/goproxyclient"
 }

@@ -13,9 +13,9 @@ import (
 	"syscall"
 
 	"github.com/BurntSushi/toml"
+	"github.com/KeyTalk/goproxyclient/bindata"
+	"github.com/KeyTalk/goproxyclient/client"
 	"github.com/fatih/color"
-	"github.com/keytalk/client/bindata"
-	"github.com/keytalk/client/client"
 	"github.com/minio/cli"
 	"github.com/mitchellh/go-homedir"
 	"github.com/op/go-logging"

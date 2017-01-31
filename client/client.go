@@ -8,7 +8,6 @@ import (
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"encoding/pem"
-	"github.com/op/go-logging"
 	"html/template"
 	"io/ioutil"
 	"math/big"
@@ -24,14 +23,17 @@ import (
 	"strings"
 	"time"
 
+	"github.com/op/go-logging"
+
 	glob "github.com/ryanuber/go-glob"
 
-	"github.com/keytalk/client/bindata"
-	rccd "github.com/keytalk/libkeytalk/rccd"
+	"github.com/KeyTalk/goproxyclient/bindata"
+	rccd "github.com/KeyTalk/keytalk-go/rccd"
 
 	"fmt"
-	"github.com/elazarl/goproxy"
 	"runtime/debug"
+
+	"github.com/elazarl/goproxy"
 )
 
 var log = logging.MustGetLogger("keytalk/client")

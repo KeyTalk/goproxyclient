@@ -17,13 +17,14 @@ import (
 	"os/exec"
 	"path"
 
+	"time"
+
+	keytalk "github.com/KeyTalk/keytalk-go/client"
+	"github.com/KeyTalk/keytalk-go/rccd"
 	"github.com/elazarl/goproxy"
 	"github.com/gorilla/mux"
-	keytalk "github.com/keytalk/libkeytalk/client"
-	"github.com/keytalk/libkeytalk/rccd"
 	"github.com/mitchellh/go-homedir"
 	"github.com/spacemonkeygo/openssl"
-	"time"
 )
 
 type RoundTripper struct {

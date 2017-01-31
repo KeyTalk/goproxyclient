@@ -2,10 +2,10 @@ package cmd
 
 import (
 	"flag"
-	"github.com/keytalk/client"
 	"runtime"
 
 	"github.com/BurntSushi/toml"
+	"github.com/KeyTalk/keytalk-go/client"
 	"github.com/op/go-logging"
 )
 
