@@ -19,6 +19,9 @@ import (
 	"github.com/minio/cli"
 	"github.com/mitchellh/go-homedir"
 	"github.com/op/go-logging"
+
+	"net/http"
+	_ "net/http/pprof"
 )
 
 var version = "0.1"
@@ -30,6 +33,10 @@ var format = logging.MustStringFormatter(
 var log = logging.MustGetLogger("keytalk/client")
 
 var globalFlags = []cli.Flag{
+	cli.BoolFlag{
+		Name:  "p,profiler",
+		Usage: "enable profiler",
+	},
 	cli.StringFlag{
 		Name:  "c,config",
 		Usage: "config file",
@@ -123,6 +130,14 @@ func run(c *cli.Context) {
 	}
 
 	logging.SetBackend(logBackends...)
+
+	if c.GlobalBool("profiler") {
+		log.Info("Profiler listening.")
+
+		go func() {
+			http.ListenAndServe("127.0.0.1:6060", nil)
+		}()
+	}
 
 	client, err := client.New(&config)
 	if err != nil {

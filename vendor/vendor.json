@@ -100,6 +100,12 @@
 			"revisionTime": "2016-03-15T20:05:05Z"
 		},
 		{
+			"checksumSHA1": "3c4yRg91RtG0yTo4C/F/22wxO5o=",
+			"path": "github.com/pkg/profile",
+			"revision": "3a8809bd8a80f8ecfe4ee1b34b3f37194968617c",
+			"revisionTime": "2016-12-23T20:39:01Z"
+		},
+		{
 			"checksumSHA1": "Li/vHIwX9fdYtoEAKthOUEwhpWU=",
 			"path": "github.com/spacemonkeygo/openssl",
 			"revision": "d63025916bcf9eb1c059d00465fe9de7ca84fff5",
