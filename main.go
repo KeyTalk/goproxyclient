@@ -53,7 +53,7 @@ var (
 )
 
 var helpTemplate = `NAME:
-{{.Name} - {{.Usage}}
+{{.Name}} - {{.Usage}}
 
 DESCRIPTION:
 {{.Description}}
@@ -66,7 +66,7 @@ COMMANDS:
 {{end}}{{if .Flags}}
 FLAGS:
 {{range .Flags}}{{.}}
-{{end}}{{end}}
+{{end}} {{end}}
 VERSION:
 ` + Version +
 	`{{ "\n"}}`
