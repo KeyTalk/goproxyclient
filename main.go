@@ -126,7 +126,7 @@ func run(c *cli.Context) {
 
 		backendLeveled.SetLevel(level, "")
 
-		logBackends = append(logBackends, backendFormatter)
+		logBackends = append(logBackends, backendLeveled)
 	}
 
 	logging.SetBackend(logBackends...)
