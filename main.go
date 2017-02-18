@@ -38,6 +38,21 @@ var globalFlags = []cli.Flag{
 		Usage: "enable profiler",
 	},
 	cli.StringFlag{
+		Name:  "keychain-path",
+		Usage: "",
+		Value: "~/Library/Keychains/login.keychain",
+	},
+	cli.StringFlag{
+		Name:  "cache-path",
+		Usage: "",
+		Value: "~/Library/Caches/KeyTalk/",
+	},
+	cli.StringFlag{
+		Name:  "library-path",
+		Usage: "",
+		Value: "~/Library/KeyTalk/",
+	},
+	cli.StringFlag{
 		Name:  "c,config",
 		Usage: "config file",
 		Value: "~/Library/KeyTalk/config.toml",
